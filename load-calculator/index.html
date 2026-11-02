@@ -244,19 +244,22 @@ table.res small{color:var(--ink3);display:block}
       <label class="chk"><input type="checkbox" id="selfw" checked> Include weight of the members themselves</label>
     </div>
     <div class="card">
-      <h3>Show</h3>
+      <h3>Show on drawing</h3>
       <div class="toggles">
         <label class="chk"><input type="checkbox" data-show="stress" checked> Stress colors</label>
-        <label class="chk"><input type="checkbox" data-show="deformed" checked> Bending shape</label>
         <label class="chk"><input type="checkbox" data-show="values" checked> % labels</label>
+        <label class="chk"><input type="checkbox" data-show="loads" checked> Loads</label>
         <label class="chk"><input type="checkbox" data-show="reactions" checked> Reactions</label>
+        <label class="chk"><input type="checkbox" data-show="dims" checked> Dimensions</label>
+        <label class="chk"><input type="checkbox" data-show="deformed" checked> Bending shape</label>
+      </div>
+      <h3 style="margin-top:12px">Force diagrams</h3>
+      <div class="toggles">
         <label class="chk"><input type="checkbox" data-show="moment"> Moment</label>
         <label class="chk"><input type="checkbox" data-show="shear"> Shear</label>
         <label class="chk"><input type="checkbox" data-show="axial"> Push / pull</label>
-        <label class="chk"><input type="checkbox" data-show="loads" checked> Loads</label>
-        <label class="chk"><input type="checkbox" data-show="dims" checked> Dimensions</label>
       </div>
-      <div class="field" style="margin-top:8px">Bending shape exaggeration
+      <div class="field" id="defBox" style="margin-top:8px">Bending shape exaggeration
         <select id="defMode"><option value="auto">Auto (easy to see)</option><option value="1">True scale (1×)</option><option value="10">10×</option><option value="50">50×</option><option value="200">200×</option></select>
       </div>
     </div>
@@ -350,6 +353,7 @@ function props(m){
    FORMATTING
    ===================================================================== */
 function fmt(v,d=0){ if(!isFinite(v)) return '—'; return (+v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function fmtClean(v){ return (+v).toLocaleString('en-US',{maximumFractionDigits:Math.abs(v)>=100?0:1}); }
 function fmtSmart(v){ const a=Math.abs(v); return a>=100?fmt(v,0):a>=10?fmt(v,1):fmt(v,2); }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 const NS = 20; // sample segments per member
@@ -790,7 +794,7 @@ function render(){
   // --- diagrams
   if(combo){ for(const [key,on,color,neg] of [['M',sh.moment,'#8b5cf6'],['V',sh.shear,'#0284c7'],['N',sh.axial,null]]){ if(on) drawDiagram(o,combo,key,color); } }
   // --- loads
-  if(sh.loads){ for(const m of model.members) if(+m.w) drawUDL(o,m); for(const n of model.nodes) if(+n.fx||+n.fy) drawPointLoad(o,n); }
+  if(sh.loads){ const lp=[]; for(const m of model.members) if(+m.w) drawUDL(o,m,lp); for(const n of model.nodes) if(+n.fx||+n.fy) drawPointLoad(o,n); }
   // --- supports & reactions
   for(const n of model.nodes) if(n.support&&n.support!=='none') drawSupport(o,n);
   if(combo&&sh.reactions) drawReactions(o,combo);
@@ -808,7 +812,6 @@ function render(){
     const fail=l.u>1+1e-9, txt=(l.nb>1?l.nb+'× · ':'')+(fail?'FAIL ':'')+fmt(l.u*100)+'%', w=txt.length*6.6+12, x=l.x+nx*20, y=l.y+ny*20;
     const faded=state.sel&&!(state.sel.type==='member'&&state.sel.id===l.id);
     o.push(`<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})"${faded?' opacity=".3"':''}><rect x="${-w/2}" y="-10" width="${w}" height="20" rx="10" fill="${fail?'#b91c1c':'#fff'}" stroke="${fail?'#7f1d1d':utilColor(l.u)}" stroke-width="1.5"/><text text-anchor="middle" y="4" font-size="11.5" font-weight="800" fill="${fail?'#fff':'#0f172a'}">${txt}</text></g>`); }
-  if(combo) drawEndForces(o);
   // --- drawing preview
   if(state.tool==='member'&&state.pending){ const [x,y]=w2s(state.pending.x,state.pending.y); o.push(`<circle cx="${x}" cy="${y}" r="15" fill="none" stroke="${COL.sel}" stroke-width="2.5" class="pulse"/><circle cx="${x}" cy="${y}" r="7" fill="${COL.sel}"/>`); }
   if(state.tool==='member'&&state.pending&&state.snap){ const p=state.pending, q=state.snap; const [x1,y1]=w2s(p.x,p.y), [x2,y2]=w2s(q.x,q.y);
@@ -850,7 +853,7 @@ function drawDiagram(o,combo,key,color){
   }
 }
 function arrow(o,x1,y1,x2,y2,marker,color,w=2.2){ o.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}" stroke-width="${w}" marker-end="url(#${marker})"/>`); }
-function drawUDL(o,m){
+function drawUDL(o,m,placed){
   const a=nodeById(m.a), b=nodeById(m.b), dx=(b.x-a.x), dy=(b.y-a.y), L=Math.hypot(dx,dy); if(!L) return;
   let [qx,qy]=udlGlobal(m,dx/L,dy/L); const ql=Math.hypot(qx,qy); if(!ql) return; qx/=ql; qy/=ql;
   const sdx=qx, sdy=-qy; // screen direction of load
@@ -858,14 +861,16 @@ function drawUDL(o,m){
   const n=Math.max(2,Math.round(Ls/26)), len=26, gap=5, tails=[];
   for(let i=0;i<=n;i++){ const t=i/n, x=ax+t*(bx-ax), y=ay+t*(by-ay); const tx=x-sdx*(len+gap), ty=y-sdy*(len+gap); tails.push([tx,ty]); arrow(o,tx,ty,x-sdx*gap,y-sdy*gap,'ah-load',COL.load,1.6); }
   o.push(`<polyline points="${tails.map(p=>p.map(v=>v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${COL.load}" stroke-width="2"/>`);
-  const mid=tails[Math.floor(n/2)]; const tag={gravity:'',projected:' (horiz. proj.)',perp:' ⟂',horizontal:' →'}[m.wType]||'';
-  o.push(`<text x="${(mid[0]-sdx*12).toFixed(1)}" y="${(mid[1]-sdy*12+4).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="700" fill="${COL.load}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtSmart(+m.w)} lb/ft${tag}</text>`);
+  const mid=tails[Math.floor(n/2)], txt=`${fmtClean(+m.w)} lb/ft`, tw=txt.length*7+6, lx=mid[0]-sdx*12, ly=mid[1]-sdy*12;
+  // one clear label per load: skip it if it would overlap another load label or is wider than the member on screen
+  const r={x0:lx-tw/2,x1:lx+tw/2,y0:ly-10,y1:ly+6}; if(tw>Ls*1.1||placed.some(q=>r.x0<q.x1&&r.x1>q.x0&&r.y0<q.y1&&r.y1>q.y0)) return; placed.push(r);
+  o.push(`<text x="${lx.toFixed(1)}" y="${(ly+4).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="700" fill="${COL.load}" stroke="#fff" stroke-width="3" paint-order="stroke">${txt}</text>`);
 }
 function drawPointLoad(o,n){
   const fx=+n.fx||0, fy=+n.fy||0, mag=Math.hypot(fx,fy); if(!mag) return;
   const dx=fx/mag, dy=fy/mag; const [x,y]=w2s(n.x,n.y); const len=54, gap=7;
   arrow(o,x-dx*(len+gap),y-dy*(len+gap),x-dx*gap,y-dy*gap,'ah-load',COL.load,3);
-  o.push(`<text x="${(x-dx*(len+gap+12)).toFixed(1)}" y="${(y-dy*(len+gap+12)+4).toFixed(1)}" text-anchor="middle" font-size="12.5" font-weight="800" fill="${COL.load}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtSmart(mag)} lb</text>`);
+  o.push(`<text x="${(x-dx*(len+gap+12)).toFixed(1)}" y="${(y-dy*(len+gap+12)+4).toFixed(1)}" text-anchor="middle" font-size="12.5" font-weight="800" fill="${COL.load}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtClean(mag)} lb</text>`);
 }
 function drawSupport(o,n){
   const [x,y]=w2s(n.x,n.y), t=n.support, st=`stroke="#334155" stroke-width="2" stroke-linejoin="round"`;
@@ -901,27 +906,9 @@ function jointMembers(nodeId){ const lam=state.mult, g=new Map();
   for(const me of state.res.ME){ for(const end of [0,1]){ if((end?me.m.b:me.m.a)!==nodeId) continue; const pid=state.res.parentOf[me.id].m, q=pieceOnJoint(me,lam,end);
     const e=g.get(pid)||{id:pid,fx:0,fy:0,m:0,n:0,N:q.N,me,end}; e.fx+=q.fx; e.fy+=q.fy; e.m+=q.m; e.n++; if(me.L>e.me.L){ e.me=me; e.end=end; } g.set(pid,e); } }
   return [...g.values()].map(e=>({...e, N:e.n===1?e.N:null})); }
-const fmtK=v=>{ const a=Math.abs(v); return a<999.5?fmtSmart(a):(a/1000).toFixed(a<9950?1:0)+'k'; };
-// short form for tags on the drawing (lb, lb·ft implied — the panel has full values)
-function forceShort(fx,fy,m){ const big=Math.max(Math.abs(fx),Math.abs(fy)), thr=Math.max(0.5,0.01*big), p=[];
-  if(Math.abs(fy)>thr) p.push(`${fy>0?'↑':'↓'}${fmtK(fy)}`); if(Math.abs(fx)>thr) p.push(`${fx>0?'→':'←'}${fmtK(fx)}`);
-  if(Math.abs(m)/12>Math.max(1,big*0.002)) p.push(`${m>0?'⟲':'⟳'}${fmtK(m/12)}`); return p.length?p.join(' '):'0'; }
 function forceText(fx,fy,m,{unit=true}={}){ const big=Math.max(Math.abs(fx),Math.abs(fy)), thr=Math.max(0.5,0.01*big), p=[];
   if(Math.abs(fy)>thr) p.push(`${fy>0?'↑':'↓'} ${fmtSmart(Math.abs(fy))}`); if(Math.abs(fx)>thr) p.push(`${fx>0?'→':'←'} ${fmtSmart(Math.abs(fx))}`);
   let t=p.length?p.join('  ')+(unit?' lb':''):'0 lb'; if(Math.abs(m)/12>Math.max(1,big*0.002)) t+=`  ${m>0?'⟲':'⟳'} ${fmtSmart(Math.abs(m)/12)} lb·ft`; return t; }
-function forceTag(o,x,y,txt,placed){ const w=txt.length*6.3+14, r={x0:x-w/2-3,x1:x+w/2+3,y0:y-13,y1:y+13};
-  if(placed&&placed.some(q=>r.x0<q.x1&&r.x1>q.x0&&r.y0<q.y1&&r.y1>q.y0)) return false; // never stack tags; the panel always has the full list
-  if(placed) placed.push(r); o.push(`<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})"><rect x="${-w/2}" y="-10" width="${w}" height="20" rx="10" fill="#1e293b" opacity=".92"/><text text-anchor="middle" y="4" font-size="11" font-weight="700" fill="#fff">${txt}</text></g>`); return true; }
-// place a tag on member piece `me`, a little way in from its joint at `end`
-function tagNearEnd(o,me,end,txt,placed){ const a=nodeById(me.m.a), b=nodeById(me.m.b); if(!a||!b) return; const [ax,ay]=w2s(a.x,a.y), [bx,by]=w2s(b.x,b.y), Ls=Math.hypot(bx-ax,by-ay); const tw=txt.length*6.3+14; if(Ls<44||tw>Ls*1.3) return; // member too short on screen for this tag
-  const d=Math.min(52,Ls*0.38), [jx,jy]=end?[bx,by]:[ax,ay], ux=(end?ax-bx:bx-ax)/Ls, uy=(end?ay-by:by-ay)/Ls; forceTag(o,jx+ux*d,jy+uy*d,txt,placed); }
-function drawEndForces(o){
-  const items=[], placed=[]; const add=h=>{ if(h&&!items.some(x=>x.type===h.type&&x.id===h.id)) items.push(h); }; add(state.sel); if(!state.coarse) add(state.hover);
-  for(const it of items){
-    if(it.type==='member'){ if(!memberById(it.id)) continue; for(const e of memberEnds(it.id)) tagNearEnd(o,e.me,e.end,forceShort(e.fx,e.fy,e.m),placed); }
-    else if(nodeById(it.id)&&state.res.idx.get(it.id)!=null){ for(const e of jointMembers(it.id)) tagNearEnd(o,e.me,e.end,forceShort(e.fx,e.fy,e.m),placed); }
-  }
-}
 // ---- dimensions (feet-inches to the nearest 1/8") ----
 function fmtFtIn(ft){ let tin=Math.round(Math.abs(ft)*96)/8, f=Math.floor(tin/12+1e-9), inch=tin-f*12, w=Math.floor(inch+1e-9), fr=Math.round((inch-w)*8);
   if(fr===8){ w++; fr=0; } if(w===12){ f++; w=0; } let fs=''; if(fr){ let n=fr,d=8; while(n%2===0){ n/=2; d/=2; } fs=` ${n}/${d}`; } return `${f}'-${w}${fs}"`; }
@@ -949,20 +936,6 @@ function drawDims(o,combo){
     if(xs.length>2) dimRow(o,[w2s(xs[0],0)[0],w2s(xs[xs.length-1],0)[0]],[xs[0],xs[xs.length-1]],y0+22,true); }
   if(ys.length>=2){ const x0=maxSx+48; dimRow(o,ys.map(y=>w2s(0,y)[1]),ys,x0,false);
     if(ys.length>2) dimRow(o,[w2s(0,ys[0])[1],w2s(0,ys[ys.length-1])[1]],[ys[0],ys[ys.length-1]],x0+22,false); }
-  // the selected member: its true length (and pitch) drawn alongside it
-  const s=state.sel, m=s&&s.type==='member'&&memberById(s.id); if(!m) return;
-  const a=nodeById(m.a), b=nodeById(m.b), [ax,ay]=w2s(a.x,a.y), [bx,by]=w2s(b.x,b.y), Ls=Math.hypot(bx-ax,by-ay); if(Ls<20) return;
-  let nx=-(by-ay)/Ls, ny=(bx-ax)/Ls;
-  // put it on the outside of the structure (away from its centre); for a lone member, the side away from the % label
-  const cx=scr.reduce((t,p)=>t+p[0],0)/scr.length, cy=scr.reduce((t,p)=>t+p[1],0)/scr.length, side=((ax+bx)/2-cx)*nx+((ay+by)/2-cy)*ny;
-  if(Math.abs(side)>4){ if(side<0){ nx=-nx; ny=-ny; } } else if(ny<0||(Math.abs(ny)<1e-9&&nx<0)){ nx=-nx; ny=-ny; }
-  const off=34, p1=[ax+nx*off,ay+ny*off], p2=[bx+nx*off,by+ny*off], C=COL.sel;
-  o.push(`<path d="M${(ax+nx*8).toFixed(1)} ${(ay+ny*8).toFixed(1)}L${(p1[0]+nx*5).toFixed(1)} ${(p1[1]+ny*5).toFixed(1)}M${(bx+nx*8).toFixed(1)} ${(by+ny*8).toFixed(1)}L${(p2[0]+nx*5).toFixed(1)} ${(p2[1]+ny*5).toFixed(1)}" stroke="${C}" stroke-width="1" opacity=".55"/>`);
-  o.push(`<path d="M${p1[0].toFixed(1)} ${p1[1].toFixed(1)}L${p2[0].toFixed(1)} ${p2[1].toFixed(1)}${tick(...p1)}${tick(...p2)}" stroke="${C}" stroke-width="1.4" fill="none"/>`);
-  const dx=b.x-a.x, dy=b.y-a.y, L=Math.hypot(dx,dy), pitch=Math.abs(dx)>1e-9&&Math.abs(dy)>1e-9?` · ${fmt(Math.abs(dy/dx)*12,2).replace(/\.?0+$/,'')}/12`:'';
-  let ang=Math.atan2(by-ay,bx-ax)*180/Math.PI; if(ang>90) ang-=180; if(ang<-90) ang+=180;
-  const mx=(p1[0]+p2[0])/2, my=(p1[1]+p2[1])/2, txt=fmtFtIn(L)+pitch, w=txt.length*6.9+14;
-  o.push(`<g transform="translate(${mx.toFixed(1)},${my.toFixed(1)}) rotate(${ang.toFixed(1)})"><rect x="${-w/2}" y="-10" width="${w}" height="20" rx="10" fill="#fff" stroke="${C}" stroke-width="1.3"/><text text-anchor="middle" y="4.5" font-size="12" font-weight="700" fill="${C}">${txt}</text></g>`);
 }
 
 /* =====================================================================
@@ -986,7 +959,7 @@ const supportName=t=>({pin:'Pin support',rollerY:'Roller (holds up/down)',roller
 let hintT=0;
 function renderHint(){
   const t=state.tool, h=document.getElementById('hint');
-  h.classList.remove('fade'); clearTimeout(hintT); if(isMobile()) hintT=setTimeout(()=>h.classList.add('fade'),5000);
+  h.classList.remove('fade'); clearTimeout(hintT); hintT=setTimeout(()=>h.classList.add('fade'),5000);
   h.textContent = {
     select:'Click a member or joint to edit it · drag joints to reshape · drag empty space to pan · scroll/pinch to zoom',
     member: state.pending?'Click to place the end · keep clicking to chain members · Esc or right-click to stop':'Click (or drag) to start a member — snaps to the grid, joints and other members',
@@ -1140,21 +1113,19 @@ function renderSelRes(){
       ['Bending moment',`${fmtSmart(Math.abs(C.mM)/12)} lb·ft`,`capacity ${fmtSmart(cap.M/12)} lb·ft`],
       ['Shear force',`${fmtSmart(Math.abs(C.mV))} lb`,`capacity ${fmtSmart(cap.V)} lb`],
       ['Axial force',Math.abs(C.mN)<0.5?'—':`${fmtSmart(Math.abs(C.mN))} lb ${comp?'push':'pull'}`, comp?`push capacity ${fmtSmart(cap.C)} lb${cap.buck?' (buckling limit)':''}`:`pull capacity ${fmtSmart(cap.T)} lb`],
-      [me.bs.length>1?'Bending stress (board 1)':'Bending stress',`${fmt(Math.abs(C.mM)*me.caps[0].sb/p.S)} psi`,`allowed ${fmt(p.Fb)} psi`],
       [C.pieces>1?'Worst sag between joints':'Sag between ends',`${fmt(C.rel,3)} in`, C.rel>1e-6?`L/${fmt(C.relL/C.rel)}${C.relL/C.rel<240?' — bouncy (> L/240)':''}`:''],
-      ['Buckling length',fmtFtIn(me.Lb/12),Math.abs(me.Lb-L*12)>0.5?'between brace points (joints where other members or supports connect)':'whole member — nothing braces it part-way'],
-      ['Member weight',`${fmt(me.swq*12,1)} lb/ft`,me.bs.length>1?`${me.bs.length} boards`:`${esc(p.matName)}`]];
+      ...(comp&&Math.abs(C.mN)>=0.5?[['Buckling length',fmtFtIn(me.Lb/12),Math.abs(me.Lb-L*12)>0.5?'between brace points':'whole member — nothing braces it part-way']]:[])];
     el.innerHTML=`<div class="card"><h3>Results — ${memName(m)} (${esc(boardsLabel(m))})</h3>
       <div class="row" style="justify-content:space-between"><b style="font-size:22px">${fmt(u*100)}%</b><span class="pill ${cls}">${fail?'FAILS':u>0.85?'CLOSE TO LIMIT':'OK'}</span></div>
       <div class="ubar"><i style="width:${Math.min(100,u/1.5*100)}%;background:${utilColor(u)}"></i><span class="lim" style="left:${100/1.5}%"></span></div>
       <div class="muted">Governed by <b>${C.gov.toLowerCase()}</b> at ${fmt(C.t[C.at]*L,1)} ft from ${nodeName(nodeById(m.a))}.</div>
       <table class="res">${rows.map(r=>`<tr><td>${r[0]}${r[2]?`<small>${r[2]}</small>`:''}</td><td><b>${r[1]}</b></td></tr>`).join('')}</table>
       <div class="sub" style="margin-top:12px;font-weight:700;font-size:13px">Forces at the ends</div>
-      <div class="muted">What this member pushes or pulls on each joint — the load that connection (nails, hanger, bearing) has to hold. Dark tags on the drawing show the same (in lb; “k” = thousand) where there's room.</div>
+      <div class="muted">What this member pushes or pulls on each joint — the load that connection (nails, hanger, bearing) has to hold.</div>
       <table class="res">${memberEnds(m.id).map(e=>{ const n=nodeById(e.node); return `<tr><td>At ${n?nodeName(n):'?'}${e===memberEnds(m.id)[0]?' (start)':' (end)'}<small>${Math.abs(e.N)<0.5?'no push/pull along it':`${fmtSmart(Math.abs(e.N))} lb ${e.N>0?'pull':'push'} along the member`} · ${fmtSmart(e.V)} lb across it</small></td><td><b>${forceText(e.fx,e.fy,e.m)}</b></td></tr>`; }).join('')}</table>
       ${miniChart(C.M,C.t,L,'#8b5cf6','Bending moment',v=>v/12,'lb·ft')}
       ${miniChart(C.V,C.t,L,'#0284c7','Shear',v=>v,'lb')}
-      ${Math.abs(C.mN)>0.5?miniChart(C.N,C.t,L,comp?'#2563eb':'#ea580c','Axial (+pull / −push)',v=>v,'lb'):''}</div>`;
+</div>`;
   } else { const n=nodeById(s.id); const i=state.res.idx.get(n?n.id:-1); if(i==null){el.innerHTML='';return;}
     const dx=c.D[3*i], dy=c.D[3*i+1]; const r=state.res.restr; let rr='';
     if(r[3*i]) rr+=`<tr><td>Sideways reaction</td><td><b>${fmtSmart(Math.abs(c.R[3*i]))} lb ${c.R[3*i]>=0?'→':'←'}</b></td></tr>`;
@@ -1165,7 +1136,7 @@ function renderSelRes(){
     if(pfx||pfy) fr+=`<tr><td>Point load</td><td><b>${forceText(pfx,pfy,0)}</b></td></tr>`;
     if(r[3*i]||r[3*i+1]||r[3*i+2]) fr+=`<tr><td>Support pushes back<small>the reaction — it balances everything above</small></td><td><b>${forceText(c.R[3*i],c.R[3*i+1],c.R[3*i+2])}</b></td></tr>`;
     el.innerHTML=`<div class="card"><h3>Results — Joint ${nodeName(n)}</h3>
-      <div class="sub" style="font-weight:700;font-size:13px">Forces on this joint</div><div class="muted">What each member pushes or pulls on it (dark tags on the drawing, where there's room). Together they always balance out.</div>
+      <div class="sub" style="font-weight:700;font-size:13px">Forces on this joint</div><div class="muted">What each member pushes or pulls on it. Together they always balance out.</div>
       <table class="res">${fr||'<tr><td>No forces</td><td></td></tr>'}</table>
       <div class="sub" style="margin-top:12px;font-weight:700;font-size:13px">Movement</div><table class="res">
       <tr><td>Moves sideways</td><td><b>${fmt(Math.abs(dx),3)} in ${Math.abs(dx)<5e-4?'':dx>0?'→':'←'}</b></td></tr>
@@ -1305,7 +1276,8 @@ document.getElementById('breakBtn').onclick=()=>{
   anim={raf:requestAnimationFrame(step)};
 };
 document.getElementById('selfw').addEventListener('change',e=>{ checkpoint(); model.selfWeight=e.target.checked; update(); });
-document.querySelectorAll('[data-show]').forEach(cb=>cb.addEventListener('change',()=>{ state.show[cb.dataset.show]=cb.checked; save(); schedule(); }));
+function syncShowUI(){ document.getElementById('defBox').style.display=state.show.deformed?'':'none'; document.getElementById('legend').style.visibility=state.show.stress?'':'hidden'; }
+document.querySelectorAll('[data-show]').forEach(cb=>cb.addEventListener('change',()=>{ state.show[cb.dataset.show]=cb.checked; syncShowUI(); save(); schedule(); }));
 document.getElementById('defMode').addEventListener('change',e=>{ state.defMode=e.target.value; schedule(); });
 // ignore the phone's delayed 'ghost' click that lands on the bar right after a tap slid the panel open
 document.getElementById('peek').onclick=()=>{ if(performance.now()-(state.sheetAt||0)<500) return; setSheet(!state.sheet); };
@@ -1509,7 +1481,7 @@ modal.addEventListener('click',e=>{ if(e.target===modal) closeHelp(); });
   if(!loaded){ try{ const s=JSON.parse(localStorage.getItem('loadcalc.v1')||'null'); if(s&&validModel(s.model)){ model=s.model; Object.assign(state.opts,s.opts||{}); Object.assign(state.show,s.show||{}); if(s.doc) state.doc=s.doc; loaded=true; } }catch(e){} }
   if(!loaded) model=TEMPLATES.gable();
   if(!model.nextId) model.nextId=1+Math.max(0,...model.nodes.map(n=>n.id),...model.members.map(m=>m.id));
-  document.querySelectorAll('[data-show]').forEach(cb=>cb.checked=!!state.show[cb.dataset.show]);
+  document.querySelectorAll('[data-show]').forEach(cb=>cb.checked=!!state.show[cb.dataset.show]); syncShowUI();
   document.getElementById('selfw').checked=model.selfWeight!==false;
   updUndo(); renderOpts(); changed();
   requestAnimationFrame(fit);
