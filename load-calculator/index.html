@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Load Calculator — 2D Structural Analysis</title>
 <meta name="description" content="Draw beams, rafters, trusses and frames, add loads and supports, and instantly see stresses, deflection and what fails.">
 <style>
@@ -51,19 +51,17 @@ input:focus,select:focus{outline:2px solid #93c5fd;outline-offset:0;border-color
 #legend .bar::after{content:"";position:absolute;right:-26px;top:0;width:22px;height:10px;border-radius:3px;background:#7f1d1d}
 #legend .ticks{display:flex;justify-content:space-between;width:206px}
 #tip{position:absolute;pointer-events:none;background:#0f172a;color:#fff;font-size:12px;padding:6px 9px;border-radius:8px;display:none;white-space:nowrap;z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.2)}
-#quick{display:none}
-@media (max-width:860px){
-  #quick.on{display:block;position:absolute;left:8px;right:8px;bottom:8px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 12px;box-shadow:0 6px 24px rgba(15,23,42,.18);z-index:6}
-  #quick .qh{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
-  #quick .qh b{font-size:16px}
-  #quick select{width:100%;font-size:16px;padding:8px}
-  #quick .qrow{display:flex;gap:8px;margin-top:8px}
-  #quick .qrow .btn{flex:1;padding:9px 6px}
-  #quick .x{border:0;background:#f1f5f9;border-radius:8px;width:32px;height:32px;font-size:18px;cursor:pointer;color:var(--ink2)}
-  #quick ~ #hint{display:block}
-  #stage.hasq #hint{display:none}
-}
-#panel{background:var(--panel);border-left:1px solid var(--line);overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
+#panel{background:var(--panel);border-left:1px solid var(--line);overflow:auto;padding:12px}
+#pbody{display:flex;flex-direction:column;gap:12px}
+#peek,#more,.lbl-m{display:none}
+.ply{display:flex;gap:6px;align-items:center}
+.ply select{flex:1}
+.ply .x{border:1px solid #fecaca;background:#fff;color:var(--bad);border-radius:7px;width:34px;height:34px;font-size:18px;cursor:pointer;flex:none}
+#toast{position:absolute;top:58px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;border-radius:10px;padding:9px 14px;display:none;gap:12px;align-items:center;z-index:8;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:calc(100% - 24px)}
+#toast.on{display:flex}
+#toast button{background:none;border:0;color:#93c5fd;font-weight:800;cursor:pointer;font-size:14px;padding:2px 4px}
+#hint{transition:opacity .4s}
+#hint.fade{opacity:0}
 .card{border:1px solid var(--line);border-radius:12px;padding:12px}
 .card h3{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3)}
 .status{border-radius:12px;padding:14px;border:1px solid}
@@ -119,19 +117,50 @@ table.res small{color:var(--ink3);display:block}
 .flash{animation:flash .5s ease-in-out 6}
 @keyframes flash{0%,100%{opacity:.2}50%{opacity:1}}
 @media (max-width:860px){
-  html,body{height:auto}
-  header{flex-wrap:wrap;height:auto;padding:8px 10px;gap:6px}
-  header .sp{display:none}
-  main{display:flex;flex-direction:column;height:auto}
-  #tools{flex-direction:row;border-right:0;border-bottom:1px solid var(--line);padding:6px;overflow-x:auto}
-  .tool{flex:1;min-width:58px}
+  html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+  header{height:50px;padding:0 8px;gap:6px;position:relative;flex-wrap:nowrap}
+  header .logo{margin-right:0}
+  header .logo span,.lbl-d,header .sp{display:none}
+  .lbl-m{display:inline}
+  #tpl{flex:1;min-width:0;font-size:16px}
+  header button{min-width:38px}
+  #more{display:block;font-size:20px;line-height:1}
+  #hb2{display:none}
+  header.menu #hb2{display:flex;flex-direction:column;position:absolute;top:50px;right:8px;background:#0f172a;padding:8px;border-radius:12px;z-index:60;gap:6px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  header.menu #hb2 button{height:44px;min-width:170px;text-align:left;font-size:15px}
+  main{display:flex;flex-direction:column;height:calc(100vh - 50px);height:calc(100dvh - 50px)}
+  #stage{order:1;flex:1;min-height:110px}
+  #panel{order:2;border-left:0;border-top:1px solid var(--line);padding:0;overflow:hidden;display:flex;flex-direction:column;border-radius:16px 16px 0 0;box-shadow:0 -6px 18px rgba(15,23,42,.10);margin-top:-12px;position:relative;z-index:4}
+  #panel.open{height:60%}
+  #peek{display:flex;flex-direction:column;width:100%;border:0;background:none;padding:6px 14px 10px;cursor:pointer;text-align:left;flex:none}
+  #peek .grab{width:40px;height:4px;border-radius:2px;background:#cbd5e1;margin:0 auto 7px;display:block}
+  #peek .pk{display:flex;align-items:center;gap:10px;width:100%}
+  #peek .pt{flex:1;min-width:0}
+  #peek .pt b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #peek .pt b.ok{color:var(--ok)} #peek .pt b.bad{color:var(--bad)} #peek .pt b.warn{color:var(--warn)}
+  #peek .pt small{display:block;color:var(--ink2);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #peek .chev{font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap}
+  #pbody{display:none;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:0 12px 14px;flex:1}
+  #panel.open #pbody{display:flex}
+  #pbody.hassel #sel{order:-2} #pbody.hassel #selres{order:-1}
+  #tools{order:3;flex-direction:row;border-right:0;border-top:1px solid var(--line);padding:4px 4px calc(4px + env(safe-area-inset-bottom));gap:2px;overflow-x:auto;position:relative;z-index:5}
+  .tool{flex:1;min-width:52px;padding:6px 2px;font-size:11px;gap:2px}
   .tool kbd{display:none}
-  #stage{height:62vh;min-height:360px}
-  #panel{border-left:0}
-  #opts{right:60px}
-  #legend{display:none}
-  #hint{font-size:12px;bottom:10px}
-  #coords{display:none}
+  input[type=number],input[type=text],select{font-size:16px}
+  #opts{left:8px;top:8px;right:52px}
+  #opts>.box{flex-wrap:nowrap;overflow-x:auto;max-width:100%;padding:6px 8px;white-space:nowrap}
+  #opts .ttl,#opts .muted{display:none}
+  #opts input[type=number]{width:72px}
+  #zoom{right:8px;top:8px}
+  #zoom button{width:38px;height:38px}
+  #legend,#coords{display:none}
+  #hint{font-size:12px;bottom:20px}
+  #toast{top:56px}
+  main.sheet-open #hint{display:none}
+  #pbody.hassel #sel .selh .name{visibility:hidden}
+  .btn{min-height:40px}
+  .btn.sm{min-height:36px;font-size:13px}
+  .chk{min-height:30px}
 }
 </style>
 </head>
@@ -139,7 +168,7 @@ table.res small{color:var(--ink3);display:block}
 <header>
   <div class="logo">
     <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#60a5fa" stroke-width="2.2" stroke-linejoin="round"><path d="M2 21 L13 5 L24 21 Z"/><path d="M7.5 21 L13 13 L18.5 21"/><path d="M13 5 L13 21" stroke="#f87171"/></svg>
-    Load Calculator
+    <span>Load Calculator</span>
   </div>
   <select id="tpl" title="Start from a template">
     <option value="">Templates…</option>
@@ -151,15 +180,16 @@ table.res small{color:var(--ink3);display:block}
     <option value="blank">Blank canvas</option>
   </select>
   <div class="hbtns">
-    <button id="undo" title="Undo (Ctrl+Z)">↶ Undo</button>
-    <button id="redo" title="Redo (Ctrl+Y)">↷</button>
+    <button id="undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶<span class="lbl-d"> Undo</span></button>
+    <button id="redo" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
   </div>
   <div class="sp"></div>
-  <div class="hbtns">
+  <button id="more" aria-label="More options">⋯</button>
+  <div class="hbtns" id="hb2">
     <button id="share" title="Copy a link to this design">Share link</button>
     <button id="export" title="Download design as a file">Save file</button>
     <button id="import" title="Open a saved design file">Open</button>
-    <button id="help" title="How to use">?</button>
+    <button id="help" title="How to use">?<span class="lbl-m"> How to use</span></button>
   </div>
   <input type="file" id="file" accept=".json,application/json" hidden>
 </header>
@@ -180,9 +210,11 @@ table.res small{color:var(--ink3);display:block}
     <div id="legend">Stress level (% of capacity)<div class="bar"></div><div class="ticks"><span>0%</span><span>50%</span><span>100%</span><span>FAIL</span></div></div>
     <div id="hint"></div>
     <div id="tip"></div>
-    <div id="quick"></div>
+    <div id="toast"></div>
   </section>
   <aside id="panel">
+    <button id="peek" type="button"></button>
+    <div id="pbody">
     <div id="status"></div>
     <div class="card">
       <h3>Load scale</h3>
@@ -212,6 +244,7 @@ table.res small{color:var(--ink3);display:block}
     <div id="sel"></div>
     <div id="selres"></div>
     <div class="foot">Units: feet, pounds (lb), pounds per foot (lb/ft = plf). Simplified allowable-stress checks for learning and early sizing — not a substitute for a licensed engineer or your local building code.</div>
+    </div>
   </aside>
 </main>
 
@@ -222,6 +255,7 @@ table.res small{color:var(--ink3);display:block}
     <li><b>Draw members</b> — pick <b>Member</b>, click a start point, click an end point. Keep clicking to chain members (great for rafters and trusses). Press <b>Esc</b> or right-click to stop. Points snap to the 1&nbsp;ft grid, to joints and onto other members.</li>
     <li><b>Add supports</b> — pick <b>Support</b> and click where the structure sits on a wall, post or foundation. <i>Pin</i> holds in place, <i>Roller</i> only holds up/down, <i>Fixed</i> also prevents rotation (like a post set in concrete).</li>
     <li><b>Add loads</b> — <b>Point load</b> for a concentrated weight at one spot; <b>Spread load</b> for weight along a member, in pounds per foot (e.g. roof snow + shingles, floor loads).</li>
+    <li><b>Doubled / sistered boards</b> — draw a new member right on top of an existing one (or part of it), or select a member and tap <b>+ Sister another board</b>. The boards act together.</li>
     <li><b>Read the colors</b> — green is comfortable, yellow is getting there, red is at the limit, and dark red pulsing means it <b>fails</b>. Click any member for detailed numbers.</li>
     <li>Drag the <b>Load scale</b> slider or hit <b>Find breaking point</b> to see how much more load it takes before something gives.</li>
   </ol>
@@ -301,7 +335,7 @@ function memberThrough(x,y){
   return null;
 }
 function newMember(a,b,base){
-  const m={id:model.nextId++, a:a.id, b:b.id, section:base.section||DEFAULT_SECTION, release:base.release||'none', braced:base.braced!==false, w:+base.w||0, wType:base.wType||'gravity'};
+  const m={id:model.nextId++, a:a.id, b:b.id, sisters:(base.sisters||[]).filter(x=>SECTIONS[x]), section:base.section||DEFAULT_SECTION, release:base.release||'none', braced:base.braced!==false, w:+base.w||0, wType:base.wType||'gravity'};
   if(base.section==='custom'){ m.cb=base.cb; m.cd=base.cd; m.cmat=base.cmat; }
   model.members.push(m); return m;
 }
@@ -310,7 +344,7 @@ function splitMember(m,x,y){
   const m2=newMember(n,b,m);
   const r=m.release;
   m.b=n.id;
-  if(r==='both'){ m.release='both'; m2.release='both'; }
+  if(r==='both'){ m.release='start'; m2.release='end'; } // new joint stays continuous; pins remain at the original ends
   else if(r==='start'){ m.release='start'; m2.release='none'; }
   else if(r==='end'){ m.release='none'; m2.release='end'; }
   return n;
@@ -320,14 +354,25 @@ function getOrCreateNode(p){
   const m = memberThrough(p.x,p.y); if(m) return splitMember(m,p.x,p.y);
   return addNode(p.x,p.y);
 }
-function memberExists(a,b){ return model.members.some(m=>(m.a===a.id&&m.b===b.id)||(m.a===b.id&&m.b===a.id)); }
+function findMember(a,b){ return model.members.find(m=>(m.a===a.id&&m.b===b.id)||(m.a===b.id&&m.b===a.id)); }
+// Draws a member from na to nb, splitting it at any joints it passes through. Pieces that land exactly
+// on an existing member are added to that member as a sistered board instead of a separate overlapping member.
 function addMemberSplit(na,nb,base){
   if(na===nb) return null;
   const on=model.nodes.filter(n=>n!==na&&n!==nb).map(n=>({n,t:projT(n,na,nb)})).filter(o=>o.t>1e-6&&o.t<1-1e-6&&segDist(o.n,na,nb)<1e-4).sort((p,q)=>p.t-q.t).map(o=>o.n);
-  const chain=[na,...on,nb]; let last=null;
-  for(let i=0;i<chain.length-1;i++){ if(!memberExists(chain[i],chain[i+1])) last=newMember(chain[i],chain[i+1],base); }
-  return last;
+  const chain=[na,...on,nb], nseg=chain.length-1, r=base.release||'none'; let last=null; const sistered=[];
+  for(let i=0;i<nseg;i++){
+    const first=i===0, lst=i===nseg-1;
+    // pins only at the two ends you drew; joints it passes through stay continuous (one board)
+    const rel = r==='both'?(first&&lst?'both':first?'start':lst?'end':'none') : r==='start'?(first?'start':'none') : r==='end'?(lst?'end':'none') : 'none';
+    const ex=findMember(chain[i],chain[i+1]);
+    if(ex){ ex.sisters=ex.sisters||[]; ex.sisters.push(SECTIONS[base.section]?base.section:(SECTIONS[ex.section]?ex.section:DEFAULT_SECTION)); sistered.push(ex); last=ex; }
+    else last=newMember(chain[i],chain[i+1],{...base,release:rel});
+  }
+  return {last,sistered};
 }
+function boards(m){ return [props(m), ...(m.sisters||[]).map(id=>props({section:id}))]; }
+function boardsLabel(m){ const ls=boards(m).map(p=>p.label); return ls.length>1&&ls.every(l=>l===ls[0]) ? `${ls.length}× ${ls[0]}` : ls.join(' + '); }
 function removeOrphans(){ const used=new Set(); model.members.forEach(m=>{used.add(m.a);used.add(m.b);}); model.nodes=model.nodes.filter(n=>used.has(n.id)); }
 function deleteMember(id){ model.members=model.members.filter(m=>m.id!==id); removeOrphans(); }
 function deleteNode(id){ model.members=model.members.filter(m=>m.a!==id&&m.b!==id); model.nodes=model.nodes.filter(n=>n.id!==id); removeOrphans(); }
@@ -371,14 +416,15 @@ function analyze(mdl){
     const A_=nodes[ia], B_=nodes[ib];
     const dx=(B_.x-A_.x)*12, dy=(B_.y-A_.y)*12, L=Math.hypot(dx,dy); if(L<1e-6) continue;
     let c=dx/L, s=dy/L; if(Math.abs(c)<1e-12) c=0; if(Math.abs(s)<1e-12) s=0;
-    const p=props(m), EA=p.E*p.A/L, EI=p.E*p.I, L2=L*L, L3=L2*L;
+    const bs=boards(m), p=bs[0]; let sEA=0,sEI=0,sW=0; for(const b of bs){ sEA+=b.E*b.A; sEI+=b.E*b.I; sW+=b.A*b.dens; }
+    const EA=sEA/L, EI=sEI, L2=L*L, L3=L2*L;
     const k=[[EA,0,0,-EA,0,0],[0,12*EI/L3,6*EI/L2,0,-12*EI/L3,6*EI/L2],[0,6*EI/L2,4*EI/L,0,-6*EI/L2,2*EI/L],
              [-EA,0,0,EA,0,0],[0,-12*EI/L3,-6*EI/L2,0,12*EI/L3,-6*EI/L2],[0,6*EI/L2,2*EI/L,0,-6*EI/L2,4*EI/L]];
     const relS=m.release==='start'||m.release==='both', relE=m.release==='end'||m.release==='both';
     if(!relS) rotK[ia]=1; if(!relE) rotK[ib]=1;
     const rel=[]; if(relS) rel.push(2); if(relE) rel.push(5);
     const ret=[0,1,2,3,4,5].filter(i=>!rel.includes(i));
-    const swq = mdl.selfWeight ? p.A/144*p.dens/12 : 0;
+    const swq = mdl.selfWeight ? sW/144/12 : 0;
     const cases=[[0,-swq], udlGlobal(m,c,s)].map(([qx,qy])=>{ const qa=qx*c+qy*s, qt=-qx*s+qy*c;
       return {qa,qt,f:[-qa*L/2,-qt*L/2,-qt*L2/12,-qa*L/2,-qt*L/2,qt*L2/12]}; });
     let kc=k, inv=null;
@@ -393,9 +439,13 @@ function analyze(mdl){
     const kg=TtKT(c,s,kc);
     for(let i=0;i<6;i++) for(let j=0;j<6;j++) K[dofs[i]][dofs[j]]+=kg[i][j];
     cases.forEach((cs,ci)=>{ const fg=TtV(c,s,cs.fc); for(let i=0;i<6;i++) P[ci][dofs[i]]-=fg[i]; });
-    const Ib=(m.braced!==false)?p.I:p.Imin, Pe=Math.PI*Math.PI*p.Eb*Ib/L2/p.FSb, Pcr=p.Fc*p.A;
-    const cap={T:p.Ft*p.A, C:Math.min(Pe,Pcr), buck:Pe<Pcr, M:p.Fb*p.S, V:p.Fv*p.Av};
-    ME.push({m,id:m.id,ia,ib,L,c,s,p,k,rel,ret,inv,cases,dofs,cap,swq});
+    // Sistered boards bend together: each board takes a share of the force in proportion to its stiffness.
+    // caps[i] = member force at which board i reaches its own limit.
+    const caps=bs.map(b=>{ const sa=b.E*b.A/sEA, sb=b.E*b.I/sEI, Ib=(m.braced!==false)?b.I:b.Imin, Pe=Math.PI*Math.PI*b.Eb*Ib/L2/b.FSb, Pcr=b.Fc*b.A;
+      return {T:b.Ft*b.A/sa, C:Math.min(Pe,Pcr)/sa, buck:Pe<Pcr, M:b.Fb*b.S/sb, V:b.Fv*b.Av/sb, sb}; });
+    let cmin=caps[0]; for(const x of caps) if(x.C<cmin.C) cmin=x;
+    const cap={T:Math.min(...caps.map(x=>x.T)), C:cmin.C, buck:cmin.buck, M:Math.min(...caps.map(x=>x.M)), V:Math.min(...caps.map(x=>x.V))};
+    ME.push({m,id:m.id,ia,ib,L,c,s,p,bs,EI:sEI,k,rel,ret,inv,cases,dofs,cap,caps,swq});
   }
   const restr=new Uint8Array(N);
   nodes.forEach((n,i)=>{ const t=n.support;
@@ -418,7 +468,7 @@ function analyze(mdl){
   for(let ci=0;ci<2;ci++) for(let d=0;d<N;d++) if(restr[d]){ let v=-P[ci][d]; const Kd=K[d]; for(let j=0;j<N;j++) v+=Kd[j]*D[ci][j]; R[ci][d]=v; }
   // member internal forces & displaced shape, per load case
   for(const me of ME){
-    const {L,c,s,k,rel,ret,inv,p}=me, EI=p.E*p.I;
+    const {L,c,s,k,rel,ret,inv}=me, EI=me.EI;
     me.res=me.cases.map((cs,ci)=>{
       const dg=me.dofs.map(d=>D[ci][d]);
       const dl=[c*dg[0]+s*dg[1], -s*dg[0]+c*dg[1], dg[2], c*dg[3]+s*dg[4], -s*dg[3]+c*dg[4], dg[5]];
@@ -466,10 +516,11 @@ function utilParts(cap,N,V,M){
   const ax = N>=0 ? N/cap.T : -N/cap.C, b=Math.abs(M)/cap.M, sh=Math.abs(V)/cap.V;
   return {ax,b,sh,u:Math.max(ax+b,sh)};
 }
+function utilAll(caps,N,V,M){ let best=null; for(const c of caps){ const u=utilParts(c,N,V,M); if(!best||u.u>best.u){ best=u; best.cap=c; } } return best; }
 function maxUtilAt(res,lam){
   let best=0, who=null;
   for(const me of res.ME){ const [a,b]=me.res;
-    for(let i=0;i<=NS;i++){ const u=utilParts(me.cap, a.N[i]+lam*b.N[i], a.V[i]+lam*b.V[i], a.M[i]+lam*b.M[i]).u; if(u>best){best=u;who=me.id;} } }
+    for(let i=0;i<=NS;i++){ const u=utilAll(me.caps, a.N[i]+lam*b.N[i], a.V[i]+lam*b.V[i], a.M[i]+lam*b.M[i]).u; if(u>best){best=u;who=me.id;} } }
   return {u:best, who};
 }
 function findLambda(res){
@@ -488,7 +539,7 @@ function combine(res,lam){
     for(let i=0;i<=NS;i++){
       const N=a.N[i]+lam*b.N[i], V=a.V[i]+lam*b.V[i], M=a.M[i]+lam*b.M[i];
       C.N[i]=N; C.V[i]=V; C.M[i]=M; C.gx[i]=a.gx[i]+lam*b.gx[i]; C.gy[i]=a.gy[i]+lam*b.gy[i]; C.vl[i]=a.vl[i]+lam*b.vl[i];
-      const up=utilParts(me.cap,N,V,M); C.u[i]=up.u;
+      const up=utilAll(me.caps,N,V,M); C.u[i]=up.u;
       if(up.u>mu||!parts){ mu=up.u; at=i; parts=up; }
       if(Math.abs(N)>Math.abs(mN)){mN=N;mNi=i;} if(Math.abs(V)>Math.abs(mV)) mV=V; if(Math.abs(M)>Math.abs(mM)){mM=M;mMi=i;}
       const dd=Math.hypot(C.gx[i],C.gy[i]); if(dd>out.maxDisp){ out.maxDisp=dd; out.maxDispAt={mem:me.id, i}; }
@@ -497,8 +548,8 @@ function combine(res,lam){
     let gov;
     if(parts.sh>=parts.ax+parts.b) gov='Shear';
     else if(parts.ax<0.1*parts.b) gov='Bending';
-    else if(parts.b<0.1*parts.ax) gov = C.N[at]>=0?'Tension (pull)':(me.cap.buck?'Buckling (push)':'Compression (push)');
-    else gov = 'Bending + '+(C.N[at]>=0?'tension':(me.cap.buck?'buckling':'compression'));
+    else if(parts.b<0.1*parts.ax) gov = C.N[at]>=0?'Tension (pull)':(parts.cap.buck?'Buckling (push)':'Compression (push)');
+    else gov = 'Bending + '+(C.N[at]>=0?'tension':(parts.cap.buck?'buckling':'compression'));
     C.maxU=mu; C.at=at; C.parts=parts; C.gov=gov; C.mN=mN; C.mV=mV; C.mM=mM; C.mMi=mMi; C.rel=rel;
     out.mem[me.id]=C;
     if(mu>out.maxU){ out.maxU=mu; out.maxWho=me.id; }
@@ -567,6 +618,10 @@ function fit(){
   const sc=Math.max(4,Math.min(160, Math.min((W-2*padX)/Math.max(x1-x0,1), (H-padTop-padBot)/Math.max(y1-y0,1))));
   state.view.sc=sc; state.view.ox=W/2-(x0+x1)/2*sc; state.view.oy=padTop+(H-padTop-padBot)/2+(y0+y1)/2*sc; schedule();
 }
+function keepSelInView(W,H){ const s=state.sel; if(!s) return; let x,y;
+  if(s.type==='member'){ const m=memberById(s.id); if(!m) return; const a=nodeById(m.a), b=nodeById(m.b); [x,y]=w2s((a.x+b.x)/2,(a.y+b.y)/2); }
+  else { const n=nodeById(s.id); if(!n) return; [x,y]=w2s(n.x,n.y); }
+  if(x<30||x>W-30||y<60||y>H-30){ state.view.ox+=W/2-x; state.view.oy+=H/2-y; } }
 function zoomAt(sx,sy,f){ const v=state.view, ns=Math.max(3,Math.min(600,v.sc*f)); const w=s2w(sx,sy); v.sc=ns; v.ox=sx-w.x*ns; v.oy=sy+w.y*ns; schedule(); }
 
 /* =====================================================================
@@ -594,19 +649,21 @@ function render(){
     const selected=state.sel&&state.sel.type==='member'&&state.sel.id===m.id, hov=state.hover&&state.hover.type==='member'&&state.hover.id===m.id;
     if(selected) o.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#60a5fa" stroke-width="16" stroke-linecap="round" opacity=".45"/>`);
     else if(hov) o.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#93c5fd" stroke-width="14" stroke-linecap="round" opacity=".45"/>`);
-    const C=combo&&combo.mem[m.id];
+    const C=combo&&combo.mem[m.id], nb=1+(m.sisters||[]).length, xw=4*(nb-1);
     if(C){
       const pts=memPts(m);
       if(defF) o.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 4"/>`);
       const poly=pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
-      if(C.maxU>1+1e-9) o.push(`<polyline points="${poly}" fill="none" stroke="#ef4444" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" class="pulse"/>`);
+      if(C.maxU>1+1e-9) o.push(`<polyline points="${poly}" fill="none" stroke="#ef4444" stroke-width="${18+xw}" stroke-linecap="round" stroke-linejoin="round" class="pulse"/>`);
       if(state.flash===m.id) o.push(`<polyline points="${poly}" fill="none" stroke="#f59e0b" stroke-width="22" stroke-linecap="round" class="flash" opacity=".7"/>`);
-      if(sh.stress){ for(let i=0;i<NS;i++) o.push(`<line x1="${pts[i][0].toFixed(1)}" y1="${pts[i][1].toFixed(1)}" x2="${pts[i+1][0].toFixed(1)}" y2="${pts[i+1][1].toFixed(1)}" stroke="${utilColor(Math.max(C.u[i],C.u[i+1]))}" stroke-width="7" stroke-linecap="round"/>`); }
-      else o.push(`<polyline points="${poly}" fill="none" stroke="${COL.mem}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>`);
+      if(sh.stress){ for(let i=0;i<NS;i++) o.push(`<line x1="${pts[i][0].toFixed(1)}" y1="${pts[i][1].toFixed(1)}" x2="${pts[i+1][0].toFixed(1)}" y2="${pts[i+1][1].toFixed(1)}" stroke="${utilColor(Math.max(C.u[i],C.u[i+1]))}" stroke-width="${7+xw}" stroke-linecap="round"/>`); }
+      else o.push(`<polyline points="${poly}" fill="none" stroke="${COL.mem}" stroke-width="${6+xw}" stroke-linecap="round" stroke-linejoin="round"/>`);
+      if(nb>1) o.push(`<polyline points="${poly}" fill="none" stroke="#fff" stroke-width="1.3" opacity=".85"/>`);
       if(C.maxU>1+1e-9){ const p=pts[C.at]; o.push(`<g transform="translate(${p[0]},${p[1]})"><circle r="9" fill="#fff" stroke="#b91c1c" stroke-width="2.5"/><path d="M-4 -4 L4 4 M4 -4 L-4 4" stroke="#b91c1c" stroke-width="2.6" stroke-linecap="round"/></g>`); }
-      if(sh.values){ const mid=pts[NS/2]; labels.push({x:mid[0],y:mid[1],dx:bx-ax,dy:by-ay,u:C.maxU,id:m.id}); }
+      if(sh.values){ const mid=pts[NS/2]; labels.push({x:mid[0],y:mid[1],dx:bx-ax,dy:by-ay,u:C.maxU,id:m.id,nb}); }
     } else {
-      o.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${COL.mem}" stroke-width="6" stroke-linecap="round"/>`);
+      o.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${COL.mem}" stroke-width="${6+xw}" stroke-linecap="round"/>`);
+      if(nb>1) o.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#fff" stroke-width="1.3" opacity=".85"/>`);
     }
     // pinned-end markers
     const L=Math.hypot(bx-ax,by-ay)||1, ux=(bx-ax)/L, uy=(by-ay)/L, off=Math.min(13,L/3);
@@ -629,9 +686,10 @@ function render(){
   if(res&&res.status==='unstable'&&res.nodeId!=null){ const n=nodeById(res.nodeId); if(n){ const [x,y]=w2s(n.x,n.y); o.push(`<circle cx="${x}" cy="${y}" r="18" fill="none" stroke="#f59e0b" stroke-width="4" class="pulse" style="opacity:.8"/><text x="${x+22}" y="${y-14}" font-size="12" font-weight="700" fill="#b45309">loose: moves ${res.dir}</text>`);} }
   // --- labels
   for(const l of labels){ let nx=-l.dy, ny=l.dx; const len=Math.hypot(nx,ny)||1; nx/=len; ny/=len; if(ny>0){nx=-nx;ny=-ny;}
-    const fail=l.u>1+1e-9, txt=(fail?'FAIL ':'')+fmt(l.u*100)+'%', w=txt.length*6.6+12, x=l.x+nx*20, y=l.y+ny*20;
+    const fail=l.u>1+1e-9, txt=(l.nb>1?l.nb+'× · ':'')+(fail?'FAIL ':'')+fmt(l.u*100)+'%', w=txt.length*6.6+12, x=l.x+nx*20, y=l.y+ny*20;
     o.push(`<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})"><rect x="${-w/2}" y="-10" width="${w}" height="20" rx="10" fill="${fail?'#b91c1c':'#fff'}" stroke="${fail?'#7f1d1d':utilColor(l.u)}" stroke-width="1.5"/><text text-anchor="middle" y="4" font-size="11.5" font-weight="800" fill="${fail?'#fff':'#0f172a'}">${txt}</text></g>`); }
   // --- drawing preview
+  if(state.tool==='member'&&state.pending){ const [x,y]=w2s(state.pending.x,state.pending.y); o.push(`<circle cx="${x}" cy="${y}" r="15" fill="none" stroke="${COL.sel}" stroke-width="2.5" class="pulse"/><circle cx="${x}" cy="${y}" r="7" fill="${COL.sel}"/>`); }
   if(state.tool==='member'&&state.pending&&state.snap){ const p=state.pending, q=state.snap; const [x1,y1]=w2s(p.x,p.y), [x2,y2]=w2s(q.x,q.y);
     const L=Math.hypot(q.x-p.x,q.y-p.y), ang=Math.atan2(q.y-p.y,q.x-p.x)*180/Math.PI;
     o.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${COL.sel}" stroke-width="5" stroke-dasharray="9 6" stroke-linecap="round" opacity=".8"/><circle cx="${x1}" cy="${y1}" r="6" fill="${COL.sel}"/>`);
@@ -717,16 +775,18 @@ function updateTip(){
   const h=state.hover, c=getCombo();
   if(!h||!state.cursor||state.drag){ tip.style.display='none'; return; }
   let html='';
-  if(h.type==='member'){ const m=memberById(h.id); if(!m){tip.style.display='none';return;} const p=props(m), a=nodeById(m.a), b=nodeById(m.b);
-    html=`<b>${memName(m)}</b> · ${esc(p.label)} · ${fmt(Math.hypot(b.x-a.x,b.y-a.y),2)} ft`;
+  if(h.type==='member'){ const m=memberById(h.id); if(!m){tip.style.display='none';return;} const a=nodeById(m.a), b=nodeById(m.b);
+    html=`<b>${memName(m)}</b> · ${esc(boardsLabel(m))} · ${fmt(Math.hypot(b.x-a.x,b.y-a.y),2)} ft`;
     if(c&&c.mem[m.id]){ const C=c.mem[m.id]; html+=`<br><span style="color:${C.maxU>1?'#fca5a5':'#86efac'}">${C.maxU>1?'FAILS':'OK'} — ${fmt(C.maxU*100)}% of capacity</span> (${C.gov.toLowerCase()})`; } }
   else { const n=nodeById(h.id); if(!n){tip.style.display='none';return;} html=`<b>Joint ${nodeName(n)}</b> (${fmt(n.x,2)}, ${fmt(n.y,2)}) ft`; if(n.support!=='none') html+=` · ${supportName(n.support)}`; }
   tip.innerHTML=html; tip.style.display='block';
   const W=svg.clientWidth; let x=state.cursor.x+16, y=state.cursor.y+18; if(x+tip.offsetWidth>W-8) x=state.cursor.x-tip.offsetWidth-12; tip.style.left=x+'px'; tip.style.top=y+'px';
 }
 const supportName=t=>({pin:'Pin support',rollerY:'Roller (holds up/down)',rollerX:'Side roller (holds sideways)',fixed:'Fixed support',none:'No support'})[t]||t;
+let hintT=0;
 function renderHint(){
   const t=state.tool, h=document.getElementById('hint');
+  h.classList.remove('fade'); clearTimeout(hintT); if(isMobile()) hintT=setTimeout(()=>h.classList.add('fade'),5000);
   h.textContent = {
     select:'Click a member or joint to edit it · drag joints to reshape · drag empty space to pan · scroll/pinch to zoom',
     member: state.pending?'Click to place the end · keep clicking to chain members · Esc or right-click to stop':'Click (or drag) to start a member — snaps to the grid, joints and other members',
@@ -735,10 +795,12 @@ function renderHint(){
     udl:'Click a member to spread a load along it (pounds per foot)',
     delete:'Click a member or joint to delete it'
   }[t];
+  if(isMobile()) h.textContent=h.textContent.replace(/Click/g,'Tap').replace(/clicking/g,'tapping').replace(/click/g,'tap').replace('scroll/pinch','pinch').replace('Esc or right-tap to stop','tap the last point again to stop');
 }
-function sectionOptions(sel){
+const isMobile=()=>matchMedia('(max-width:860px)').matches;
+function sectionOptions(sel,allowCustom=true){
   let h=''; for(const g of SECTION_GROUPS){ h+=`<optgroup label="${esc(g.label)}">`+g.ids.map(id=>`<option value="${id}"${id===sel?' selected':''}>${esc(SECTIONS[id].name)}</option>`).join('')+'</optgroup>'; }
-  return h+`<optgroup label="Other"><option value="custom"${sel==='custom'?' selected':''}>Custom rectangle…</option></optgroup>`;
+  return allowCustom? h+`<optgroup label="Other"><option value="custom"${sel==='custom'?' selected':''}>Custom rectangle…</option></optgroup>` : h;
 }
 const RELEASES=[['none','Rigid (continuous)'],['both','Pinned both ends (truss)'],['start','Pinned at start only'],['end','Pinned at end only']];
 const WTYPES=[['gravity','Straight down (weight)'],['projected','Down, per horizontal ft (snow)'],['perp','Perpendicular to member (wind)'],['horizontal','Sideways → (wind on wall)']];
@@ -767,56 +829,57 @@ document.getElementById('tools').addEventListener('click',e=>{ const b=e.target.
    SIDE PANEL
    ===================================================================== */
 function renderStatus(){
-  const r=state.res, el=document.getElementById('status'); let cls='neutral', big='', body='', kv='';
-  if(!r||r.status==='empty'){ big='✏️ Draw your structure'; body='Choose <b>Member</b> on the left and click on the grid to draw beams, rafters or posts — or start from a <b>Template</b> at the top.'; }
-  else if(r.status==='nosupport'){ cls='warn'; big='⚠️ Add supports'; body='Use the <b>Support</b> tool to show where the structure rests on a wall, post or foundation.'; }
-  else if(r.status==='unstable'){ cls='warn'; const n=nodeById(r.nodeId); big='⚠️ Not stable yet'; body=`The structure can move or fold up — joint <b>${n?nodeName(n):'?'}</b> is free to move ${r.dir}. Add a support, add a diagonal brace, or make a connection <b>rigid</b>.`; }
+  const r=state.res, el=document.getElementById('status'); let cls='neutral', big='', body='', kv='', pt='', ps='';
+  if(!r||r.status==='empty'){ big='✏️ Draw your structure'; body='Choose <b>Member</b> and tap on the grid to draw beams, rafters or posts — or start from a <b>Template</b> at the top.'; pt='Draw your structure'; ps='Pick Member below, or a template up top'; }
+  else if(r.status==='nosupport'){ cls='warn'; big='⚠️ Add supports'; body='Use the <b>Support</b> tool to show where the structure rests on a wall, post or foundation.'; pt='⚠️ Add supports'; ps='Use the Support tool on a joint'; }
+  else if(r.status==='unstable'){ cls='warn'; const n=nodeById(r.nodeId); big='⚠️ Not stable yet'; body=`The structure can move or fold up — joint <b>${n?nodeName(n):'?'}</b> is free to move ${r.dir}. Add a support, add a diagonal brace, or make a connection <b>rigid</b>.`; pt='⚠️ Not stable yet'; ps=`Joint ${n?nodeName(n):'?'} can move ${r.dir}`; }
   else {
     const c=getCombo(), lam=r.lambda, who=(c.maxWho&&memberById(c.maxWho))||model.members[0];
     const anyLoad = r.hasApplied || model.selfWeight;
-    if(!anyLoad){ big='Add some loads'; body='Use <b>Point load</b> or <b>Spread load</b> to put weight on the structure.'; }
-    else if(c.fails){ cls='bad'; big=`✕ ${c.fails} member${c.fails>1?'s':''} fail${c.fails>1?'':'s'}`; body=`Worst is <b>${memName(who)}</b> at <b>${fmt(c.maxU*100)}%</b> of its capacity (${c.mem[who.id].gov.toLowerCase()}). Try a bigger size, shorter span, or extra support.`; }
-    else { cls='ok'; big='✓ Everything holds'; body=`Most stressed: <b>${memName(who)}</b> at <b>${fmt(c.maxU*100)}%</b> of capacity (${c.mem[who.id].gov.toLowerCase()}).`; }
+    if(!anyLoad){ big='Add some loads'; body='Use <b>Point load</b> or <b>Spread load</b> to put weight on the structure.'; pt='Add some loads'; ps='Use Point load or Spread load'; }
+    else if(c.fails){ cls='bad'; big=`✕ ${c.fails} member${c.fails>1?'s':''} fail${c.fails>1?'':'s'}`; body=`Worst is <b>${memName(who)}</b> at <b>${fmt(c.maxU*100)}%</b> of its capacity (${c.mem[who.id].gov.toLowerCase()}). Try a bigger size, shorter span, or extra support.`; pt=big; }
+    else { cls='ok'; big='✓ Everything holds'; body=`Most stressed: <b>${memName(who)}</b> at <b>${fmt(c.maxU*100)}%</b> of capacity (${c.mem[who.id].gov.toLowerCase()}).`; pt=big; }
     if(anyLoad){
+      ps=`Worst: ${memName(who)} at ${fmt(c.maxU*100)}%`+(lam.lam===0?' · fails under own weight':isFinite(lam.lam)?` · breaks at ${fmt(lam.lam,2)}×`:'');
       let bp; if(lam.lam===0) bp='Fails under its own weight'; else if(!isFinite(lam.lam)) bp='No added loads'; else bp=`${fmt(lam.lam,2)}× your loads`;
       kv=`<div class="kv"><span>Breaking point</span><b>${bp}</b>${isFinite(lam.lam)&&lam.lam>0&&lam.who?`<span>First to fail</span><b>${memName(memberById(lam.who)||{id:'?'})}</b>`:''}<span>Biggest movement</span><b>${fmt(c.maxDisp,2)} in</b>${state.mult!==1?`<span>Showing loads at</span><b>${fmt(state.mult,2)}×</b>`:''}</div>`;
     }
   }
   el.innerHTML=`<div class="status ${cls}"><div class="big">${big}</div><p>${body}</p>${kv}</div>`;
+  state.peekStatus={pt,ps,cls}; renderPeek();
 }
-function renderQuick(){
-  const q=document.getElementById('quick'), s=state.sel, st=document.getElementById('stage');
-  const item = s && (s.type==='member'?memberById(s.id):nodeById(s.id));
-  if(!item){ q.className=''; q.innerHTML=''; st.classList.remove('hasq'); return; }
-  let edit;
-  if(s.type==='member') edit=`<label class="field" style="margin:0">Size / material<select data-k="section">${sectionOptions(item.section)}</select></label>`;
-  else edit=`<label class="field" style="margin:0">Support<select data-k="support">${[['none','None (free joint)'],...SUPPORTS.map(x=>[x[0],supportName(x[0])])].map(([v,l])=>`<option value="${v}"${item.support===v?' selected':''}>${l}</option>`).join('')}</select></label>`;
-  q.innerHTML=`<div class="qh"><b>${s.type==='member'?'Member '+memName(item):'Joint '+nodeName(item)}</b><span id="qres"></span><button class="x" data-act="close" aria-label="Close">×</button></div>${edit}
-    <div class="qrow"><button class="btn primary" data-act="details">All details & settings ↓</button><button class="btn danger" data-act="del">Delete</button></div>`;
-  q.className='on'; st.classList.add('hasq'); renderQuickRes();
+function utilPill(u){ const f=u>1+1e-9, cls=f?'bad':u>0.85?'warn':'ok'; return `<span class="pill ${cls}">${f?'FAILS ':''}${fmt(u*100)}%</span>`; }
+// Phone bottom sheet: the always-visible bar sums up the selection (or the whole structure)
+function renderPeek(){
+  const el=document.getElementById('peek'); if(!el) return; const s=state.sel, c=getCombo(); let t='', sub='', pill='', tc='';
+  const m=s&&s.type==='member'&&memberById(s.id), n=s&&s.type==='node'&&nodeById(s.id);
+  if(m){ const a=nodeById(m.a), b=nodeById(m.b); t='Member '+memName(m); sub=`${boardsLabel(m)} · ${fmt(Math.hypot(b.x-a.x,b.y-a.y),2)} ft`; if(c&&c.mem[m.id]) pill=utilPill(c.mem[m.id].maxU); }
+  else if(n){ t='Joint '+nodeName(n); sub=supportName(n.support)+((+n.fy||+n.fx)?` · ${fmtSmart(Math.hypot(+n.fx||0,+n.fy||0))} lb load`:''); }
+  else { const p=state.peekStatus||{pt:'',ps:'',cls:''}; t=p.pt; sub=p.ps; tc=p.cls; }
+  el.innerHTML=`<span class="grab"></span><span class="pk"><span class="pt"><b class="${tc}">${t}</b><small>${esc(sub)}</small></span>${pill}<span class="chev">${state.sheet?'Hide ▾':(m||n)?'Edit ▴':'More ▴'}</span></span>`;
 }
-function renderQuickRes(){
-  const el=document.getElementById('qres'); if(!el) return; const s=state.sel, c=getCombo();
-  if(!s||!c||s.type!=='member'||!c.mem[s.id]){ el.innerHTML=''; return; }
-  const u=c.mem[s.id].maxU, cls=u>1+1e-9?'bad':u>0.85?'warn':'ok';
-  el.innerHTML=`<span class="pill ${cls}">${u>1+1e-9?'FAILS ':''}${fmt(u*100)}%</span>`;
-}
+function setSheet(open){ state.sheet=!!open; document.getElementById('panel').classList.toggle('open',state.sheet); document.querySelector('main').classList.toggle('sheet-open',state.sheet); renderPeek(); }
+
 function renderSel(){
-  renderQuick();
   const el=document.getElementById('sel'), s=state.sel;
-  if(!s){ el.innerHTML=`<div class="card"><h3>Selection</h3><div class="muted">Click a member or joint with the <b>Select</b> tool to see its size, loads and detailed results.</div></div>`; return; }
+  document.getElementById('pbody').classList.toggle('hassel',!!s); renderPeek();
+  if(!s){ el.innerHTML=`<div class="card"><h3>Selection</h3><div class="muted">Tap a member or joint with the <b>Select</b> tool to see its size, loads and detailed results.</div></div>`; return; }
   if(s.type==='member'){ const m=memberById(s.id); if(!m){state.sel=null;return renderSel();} const a=nodeById(m.a), b=nodeById(m.b);
     const L=Math.hypot(b.x-a.x,b.y-a.y), ang=Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI, pitch=Math.abs(b.x-a.x)>1e-9?Math.abs((b.y-a.y)/(b.x-a.x))*12:Infinity;
-    el.innerHTML=`<div class="card"><div class="selh"><span class="name">Member ${memName(m)}</span><button class="btn sm danger" data-act="del">Delete</button></div>
+    el.innerHTML=`<div class="card"><div class="selh"><span class="name">Member ${memName(m)} <span id="selPill"></span></span><button class="btn sm danger" data-act="del">Delete</button></div>
       <div class="muted">${nodeName(a)} → ${nodeName(b)} · angle ${fmt(ang,1)}°${isFinite(pitch)&&pitch>0.01?` · pitch ${fmt(pitch,2)}/12`:''}</div>
       <div class="grid2"><label class="field">Length (ft)<input type="number" step="0.25" min="0.1" data-k="len" value="${+L.toFixed(4)}"></label>
       <label class="field">Joints<select data-k="release">${RELEASES.map(([v,l])=>`<option value="${v}"${m.release===v?' selected':''}>${l}</option>`).join('')}</select></label></div>
-      <label class="field">Size / material<select data-k="section">${sectionOptions(m.section)}</select></label>
+      <div class="field">${(m.sisters||[]).length?`Boards here — ${1+m.sisters.length} sistered, acting together`:'Size / material'}
+        <div class="ply"><select data-k="section" aria-label="Board 1 size">${sectionOptions(m.section)}</select></div>
       ${m.section==='custom'?`<div class="grid2"><label class="field">Width (in)<input type="number" step="0.25" data-k="cb" value="${m.cb??1.5}"></label><label class="field">Depth (in)<input type="number" step="0.25" data-k="cd" value="${m.cd??5.5}"></label></div><label class="field">Material<select data-k="cmat">${Object.entries(MATERIALS).map(([k,v])=>`<option value="${k}"${(m.cmat||'dfl')===k?' selected':''}>${v.name}</option>`).join('')}</select></label>`:''}
+        ${(m.sisters||[]).map((id,i)=>`<div class="ply"><select data-sis="${i}" aria-label="Board ${i+2} size">${sectionOptions(id,false)}</select><button class="x" data-act="rmsis" data-i="${i}" aria-label="Remove this board">×</button></div>`).join('')}
+        <button class="btn sm" data-act="addsis" style="align-self:flex-start;margin-top:2px">+ Sister another board</button>
+      </div>
       <label class="chk" title="If on, the member can only buckle in the plane of the drawing (sheathing, blocking or bracing stops sideways buckling)."><input type="checkbox" data-k="braced"${m.braced!==false?' checked':''}> Braced sideways (sheathing / blocking)</label>
       <div class="grid2"><label class="field">Spread load (lb/ft)<input type="number" step="10" data-k="w" value="${+m.w||0}"></label>
       <label class="field">Direction<select data-k="wType">${WTYPES.map(([v,l])=>`<option value="${v}"${m.wType===v?' selected':''}>${l}</option>`).join('')}</select></label></div>
-      <div class="row" style="margin-top:10px"><button class="btn sm" data-act="allsize">Use this size on all members</button><button class="btn sm" data-act="split">Split in half</button></div></div>`;
+      <div class="row" style="margin-top:10px"><button class="btn sm" data-act="allsize">Use these boards on all members</button><button class="btn sm" data-act="split">Split in half</button></div></div>`;
   } else { const n=nodeById(s.id); if(!n){state.sel=null;return renderSel();}
     el.innerHTML=`<div class="card"><div class="selh"><span class="name">Joint ${nodeName(n)}</span><button class="btn sm danger" data-act="del">Delete</button></div>
       <div class="grid2"><label class="field">X (ft)<input type="number" step="0.5" data-k="x" value="${n.x}"></label><label class="field">Y (ft)<input type="number" step="0.5" data-k="y" value="${n.y}"></label></div>
@@ -825,10 +888,11 @@ function renderSel(){
   }
 }
 let editCk=false;
-const selEl=document.getElementById('sel'), quickEl=document.getElementById('quick');
-for(const el of [selEl,quickEl]){
+const selEl=document.getElementById('sel');
+for(const el of [selEl]){
 el.addEventListener('focusin',()=>{editCk=false;});
 function applyField(t){
+  if(t.dataset.sis!=null&&state.sel&&state.sel.type==='member'){ const m=memberById(state.sel.id); if(!editCk){ checkpoint(); editCk=true; } m.sisters[+t.dataset.sis]=t.value; update(); return; }
   const k=t.dataset.k; if(!k||!state.sel) return;
   if(!editCk){ checkpoint(); editCk=true; }
   const val = t.type==='checkbox'? t.checked : t.type==='number'? +t.value : t.value;
@@ -839,15 +903,15 @@ function applyField(t){
     else if(k==='section'){ m.section=val; if(val==='custom'){ const p=props({section:DEFAULT_SECTION}); m.cb=m.cb||1.5; m.cd=m.cd||5.5; m.cmat=m.cmat||'dfl'; } rebuild=true; }
     else m[k]=val;
   } else { const n=nodeById(state.sel.id); n[k]= (k==='x'||k==='y')? r6(val) : val; }
-  update(); if(rebuild) renderSel(); else renderQuick();
+  update(); if(rebuild) renderSel(); else renderPeek();
 }
 el.addEventListener('input',e=>{ if(e.target.type==='number') applyField(e.target); });
 el.addEventListener('change',e=>{ if(e.target.type!=='number') applyField(e.target); editCk=false; });
 el.addEventListener('click',e=>{ const b=e.target.closest('[data-act]'); if(!b||!state.sel) return; const act=b.dataset.act;
-  if(act==='close'){ select(null); return; }
-  if(act==='details'){ document.getElementById('sel').scrollIntoView({behavior:'smooth',block:'start'}); return; }
+  if(act==='addsis'){ const m=memberById(state.sel.id); checkpoint(); m.sisters=m.sisters||[]; m.sisters.push(SECTIONS[m.section]?m.section:DEFAULT_SECTION); changed(); return; }
+  if(act==='rmsis'){ const m=memberById(state.sel.id); checkpoint(); m.sisters.splice(+b.dataset.i,1); changed(); return; }
   if(act==='del'){ checkpoint(); if(state.sel.type==='member') deleteMember(state.sel.id); else deleteNode(state.sel.id); state.sel=null; changed(); }
-  else if(act==='allsize'){ const m=memberById(state.sel.id); checkpoint(); model.members.forEach(x=>{ x.section=m.section; x.cb=m.cb; x.cd=m.cd; x.cmat=m.cmat; }); changed(); }
+  else if(act==='allsize'){ const m=memberById(state.sel.id); checkpoint(); model.members.forEach(x=>{ x.section=m.section; x.cb=m.cb; x.cd=m.cd; x.cmat=m.cmat; x.sisters=(m.sisters||[]).slice(); }); changed(); }
   else if(act==='split'){ const m=memberById(state.sel.id), a=nodeById(m.a), b=nodeById(m.b); checkpoint(); const n=splitMember(m,(a.x+b.x)/2,(a.y+b.y)/2); state.sel={type:'node',id:n.id}; changed(); }
 });
 }
@@ -860,8 +924,9 @@ function miniChart(arr,L,color,title,conv,unit){
   <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="background:#f8fafc;border-radius:8px"><path d="M0 ${H/2}H${W}" stroke="#cbd5e1"/><path d="${d}" fill="${color}" fill-opacity=".18" stroke="${color}" stroke-width="1.8"/><circle cx="${pts[mi][0]}" cy="${pts[mi][1]}" r="3" fill="${color}"/></svg></div>`;
 }
 function renderSelRes(){
-  renderQuickRes();
+  renderPeek();
   const el=document.getElementById('selres'), s=state.sel, c=getCombo();
+  const sp=document.getElementById('selPill'); if(sp) sp.innerHTML = (s&&s.type==='member'&&c&&c.mem[s.id])? utilPill(c.mem[s.id].maxU) : '';
   if(!s||!c){ el.innerHTML=''; return; }
   if(s.type==='member'){ const m=memberById(s.id), C=m&&c.mem[m.id]; if(!C){el.innerHTML='';return;}
     const me=state.res.ME.find(x=>x.id===m.id), p=me.p, cap=me.cap, L=me.L/12, u=C.maxU, fail=u>1+1e-9, cls=fail?'bad':u>0.85?'warn':'ok';
@@ -870,10 +935,10 @@ function renderSelRes(){
       ['Bending moment',`${fmtSmart(Math.abs(C.mM)/12)} lb·ft`,`capacity ${fmtSmart(cap.M/12)} lb·ft`],
       ['Shear force',`${fmtSmart(Math.abs(C.mV))} lb`,`capacity ${fmtSmart(cap.V)} lb`],
       ['Axial force',Math.abs(C.mN)<0.5?'—':`${fmtSmart(Math.abs(C.mN))} lb ${comp?'push':'pull'}`, comp?`push capacity ${fmtSmart(cap.C)} lb${cap.buck?' (buckling limit)':''}`:`pull capacity ${fmtSmart(cap.T)} lb`],
-      ['Bending stress',`${fmt(Math.abs(C.mM)/p.S)} psi`,`allowed ${fmt(p.Fb)} psi`],
+      [me.bs.length>1?'Bending stress (board 1)':'Bending stress',`${fmt(Math.abs(C.mM)*me.caps[0].sb/p.S)} psi`,`allowed ${fmt(p.Fb)} psi`],
       ['Sag between ends',`${fmt(C.rel,3)} in`, C.rel>1e-6?`L/${fmt(me.L/C.rel)}${me.L/C.rel<240?' — bouncy (> L/240)':''}`:''],
-      ['Member weight',`${fmt(me.swq*12,1)} lb/ft`,`${esc(p.matName)}`]];
-    el.innerHTML=`<div class="card"><h3>Results — ${memName(m)} (${esc(p.label)})</h3>
+      ['Member weight',`${fmt(me.swq*12,1)} lb/ft`,me.bs.length>1?`${me.bs.length} boards`:`${esc(p.matName)}`]];
+    el.innerHTML=`<div class="card"><h3>Results — ${memName(m)} (${esc(boardsLabel(m))})</h3>
       <div class="row" style="justify-content:space-between"><b style="font-size:22px">${fmt(u*100)}%</b><span class="pill ${cls}">${fail?'FAILS':u>0.85?'CLOSE TO LIMIT':'OK'}</span></div>
       <div class="ubar"><i style="width:${Math.min(100,u/1.5*100)}%;background:${utilColor(u)}"></i><span class="lim" style="left:${100/1.5}%"></span></div>
       <div class="muted">Governed by <b>${C.gov.toLowerCase()}</b> at ${fmt(C.at/NS*L,1)} ft from ${nodeName(nodeById(m.a))}.</div>
@@ -891,7 +956,9 @@ function renderSelRes(){
       <tr><td>Moves up/down</td><td><b>${fmt(Math.abs(dy),3)} in ${Math.abs(dy)<5e-4?'':dy>0?'↑':'↓'}</b></td></tr>${rr}</table></div>`;
   }
 }
-function select(type,id){ state.sel= type?{type,id}:null; renderSel(); renderSelRes(); schedule(); }
+function select(type,id,openSheet=true){ state.sel= type?{type,id}:null; renderSel(); renderSelRes();
+  if(isMobile()){ if(type&&openSheet&&state.tool==='select') openSelSheet(); else if(!type) setSheet(false); } schedule(); }
+function openSelSheet(){ setSheet(true); document.getElementById('pbody').scrollTop=0; }
 
 /* =====================================================================
    POINTER / KEYBOARD INTERACTION
@@ -901,9 +968,11 @@ function spos(e){ const r=svg.getBoundingClientRect(); return {x:e.clientX-r.lef
 function createMemberBetween(p,q){
   if(Math.hypot(p.x-q.x,p.y-q.y)<1e-6) return null;
   checkpoint(); const na=getOrCreateNode(p), nb=getOrCreateNode(q); if(na===nb){ return null; }
-  const m=addMemberSplit(na,nb,{section:state.opts.section, release:state.opts.release});
-  if(m) state.sel={type:'member',id:m.id};
-  changed(); return nb;
+  const r=addMemberSplit(na,nb,{section:state.opts.section, release:state.opts.release});
+  if(r&&r.last) state.sel={type:'member',id:r.last.id};
+  changed();
+  if(r&&r.sistered.length) toast(`Doubled up: added a ${esc(SECTIONS[state.opts.section]?SECTIONS[state.opts.section].label:'board')} alongside ${r.sistered.map(memName).join(', ')}`, true);
+  return nb;
 }
 function nodeForTool(sx,sy){ let n=hitNode(sx,sy); if(n) return n; const p=snapAt(sx,sy); if(p.kind==='member'){ return getOrCreateNode(p); } return null; }
 function toolClick(sx,sy){
@@ -929,8 +998,8 @@ svg.addEventListener('pointerdown',e=>{
   const t=state.tool;
   if(t==='member'){ const q=snapAt(p.x,p.y,{free:e.shiftKey}); state.pendingFresh=!state.pending; if(!state.pending) state.pending=q; state.drag={...base,type:'member'}; state.snap=q; renderHint(); schedule(); return; }
   if(t==='select'){
-    const n=hitNode(p.x,p.y); if(n){ select('node',n.id); state.drag={...base,type:'node',id:n.id}; return; }
-    const m=hitMember(p.x,p.y); if(m){ select('member',m.id); const a=nodeById(m.a), b=nodeById(m.b); state.drag={...base,type:'mem',id:m.id,a0:{x:a.x,y:a.y},b0:{x:b.x,y:b.y}}; return; }
+    const n=hitNode(p.x,p.y); if(n){ select('node',n.id,false); state.drag={...base,type:'node',id:n.id}; return; }
+    const m=hitMember(p.x,p.y); if(m){ select('member',m.id,false); const a=nodeById(m.a), b=nodeById(m.b); state.drag={...base,type:'mem',id:m.id,a0:{x:a.x,y:a.y},b0:{x:b.x,y:b.y}}; return; }
     state.drag={...base,type:'pan',deselect:true}; return;
   }
   state.drag={...base,type:'click'};
@@ -964,6 +1033,7 @@ function endPointer(e){
   if(e.type==='pointercancel') { schedule(); return; }
   if(d.type==='pan'){ if(!d.moved&&d.deselect) select(null); }
   else if(d.type==='click'){ if(!d.moved) toolClick(p.x,p.y); }
+  else if((d.type==='node'||d.type==='mem')&&!d.moved){ if(isMobile()) openSelSheet(); }
   else if(d.type==='node'){ if(d.moved){ if(d.target) mergeNodes(d.id,d.target); if(!nodeById(d.id)&&d.target) state.sel={type:'node',id:d.target}; changed(); } }
   else if(d.type==='mem'){ if(d.moved) changed(); }
   else if(d.type==='member'){
@@ -998,6 +1068,9 @@ const multEl=document.getElementById('mult'), multOut=document.getElementById('m
 function setMult(v){ state.mult=Math.max(0,v); multEl.value=state.mult; multOut.textContent=fmt(state.mult,2)+'×'; state.comboKey=null; renderStatus(); renderSelRes(); schedule(); }
 multEl.addEventListener('input',()=>{ stopAnim(); state.flash=null; setMult(+multEl.value); });
 document.getElementById('mult1').onclick=()=>{ stopAnim(); state.flash=null; setMult(1); };
+let toastT=0;
+function toast(msg,undoable){ const t=document.getElementById('toast'); t.innerHTML=`<span>${msg}</span>${undoable?'<button data-undo>Undo</button>':''}`; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),5000); }
+document.getElementById('toast').addEventListener('click',e=>{ if(e.target.closest('[data-undo]')){ undo(); } document.getElementById('toast').classList.remove('on'); });
 let anim=null;
 function stopAnim(){ if(anim){ cancelAnimationFrame(anim.raf); anim=null; } }
 document.getElementById('breakBtn').onclick=()=>{
@@ -1012,6 +1085,11 @@ document.getElementById('breakBtn').onclick=()=>{
 document.getElementById('selfw').addEventListener('change',e=>{ checkpoint(); model.selfWeight=e.target.checked; update(); });
 document.querySelectorAll('[data-show]').forEach(cb=>cb.addEventListener('change',()=>{ state.show[cb.dataset.show]=cb.checked; save(); schedule(); }));
 document.getElementById('defMode').addEventListener('change',e=>{ state.defMode=e.target.value; schedule(); });
+document.getElementById('peek').onclick=()=>setSheet(!state.sheet);
+const hdr=document.querySelector('header');
+document.getElementById('more').onclick=e=>{ e.stopPropagation(); hdr.classList.toggle('menu'); };
+document.getElementById('hb2').addEventListener('click',()=>hdr.classList.remove('menu'));
+document.addEventListener('pointerdown',e=>{ if(!e.target.closest('#hb2')&&!e.target.closest('#more')) hdr.classList.remove('menu'); });
 document.getElementById('undo').onclick=undo; document.getElementById('redo').onclick=redo;
 
 /* =====================================================================
@@ -1069,7 +1147,8 @@ modal.addEventListener('click',e=>{ if(e.target===modal) closeHelp(); });
   document.getElementById('selfw').checked=model.selfWeight!==false;
   updUndo(); renderOpts(); changed();
   requestAnimationFrame(fit);
-  let rzT=0; window.addEventListener('resize',()=>{ schedule(); clearTimeout(rzT); rzT=setTimeout(fit,150); });
+  let last=null; new ResizeObserver(()=>{ const W=svg.clientWidth, H=svg.clientHeight; if(!W||!H) return;
+    if(last){ state.view.ox+=(W-last.W)/2; state.view.oy+=(H-last.H)/2; keepSelInView(W,H); } last={W,H}; schedule(); }).observe(document.getElementById('stage'));
   let seen=false; try{ seen=!!localStorage.getItem('loadcalc.seen'); }catch(e){}
   if(!seen) openHelp();
 })();
