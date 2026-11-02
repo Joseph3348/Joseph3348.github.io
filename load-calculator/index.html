@@ -51,6 +51,18 @@ input:focus,select:focus{outline:2px solid #93c5fd;outline-offset:0;border-color
 #legend .bar::after{content:"";position:absolute;right:-26px;top:0;width:22px;height:10px;border-radius:3px;background:#7f1d1d}
 #legend .ticks{display:flex;justify-content:space-between;width:206px}
 #tip{position:absolute;pointer-events:none;background:#0f172a;color:#fff;font-size:12px;padding:6px 9px;border-radius:8px;display:none;white-space:nowrap;z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+#quick{display:none}
+@media (max-width:860px){
+  #quick.on{display:block;position:absolute;left:8px;right:8px;bottom:8px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 12px;box-shadow:0 6px 24px rgba(15,23,42,.18);z-index:6}
+  #quick .qh{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+  #quick .qh b{font-size:16px}
+  #quick select{width:100%;font-size:16px;padding:8px}
+  #quick .qrow{display:flex;gap:8px;margin-top:8px}
+  #quick .qrow .btn{flex:1;padding:9px 6px}
+  #quick .x{border:0;background:#f1f5f9;border-radius:8px;width:32px;height:32px;font-size:18px;cursor:pointer;color:var(--ink2)}
+  #quick ~ #hint{display:block}
+  #stage.hasq #hint{display:none}
+}
 #panel{background:var(--panel);border-left:1px solid var(--line);overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
 .card{border:1px solid var(--line);border-radius:12px;padding:12px}
 .card h3{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3)}
@@ -168,6 +180,7 @@ table.res small{color:var(--ink3);display:block}
     <div id="legend">Stress level (% of capacity)<div class="bar"></div><div class="ticks"><span>0%</span><span>50%</span><span>100%</span><span>FAIL</span></div></div>
     <div id="hint"></div>
     <div id="tip"></div>
+    <div id="quick"></div>
   </section>
   <aside id="panel">
     <div id="status"></div>
@@ -531,8 +544,8 @@ function getCombo(){ const r=state.res; if(!r||r.status!=='ok') return null; con
    ===================================================================== */
 const w2s=(x,y)=>[state.view.ox+x*state.view.sc, state.view.oy-y*state.view.sc];
 const s2w=(sx,sy)=>({x:(sx-state.view.ox)/state.view.sc, y:(state.view.oy-sy)/state.view.sc});
-function hitNode(sx,sy,exclude){ let best=null,bd=11; for(const n of model.nodes){ if(n.id===exclude) continue; const [x,y]=w2s(n.x,n.y), d=Math.hypot(x-sx,y-sy); if(d<bd){bd=d;best=n;} } return best; }
-function hitMember(sx,sy){ let best=null,bd=9; const p={x:sx,y:sy};
+function hitNode(sx,sy,exclude){ let best=null,bd=state.coarse?24:11; for(const n of model.nodes){ if(n.id===exclude) continue; const [x,y]=w2s(n.x,n.y), d=Math.hypot(x-sx,y-sy); if(d<bd){bd=d;best=n;} } return best; }
+function hitMember(sx,sy){ let best=null,bd=state.coarse?20:9; const p={x:sx,y:sy};
   for(const m of model.members){ const a=nodeById(m.a), b=nodeById(m.b); const [ax,ay]=w2s(a.x,a.y), [bx,by]=w2s(b.x,b.y); const d=segDist(p,{x:ax,y:ay},{x:bx,y:by}); if(d<bd){bd=d;best=m;} } return best; }
 function snapAt(sx,sy,{exclude=null, members=true, free=false}={}){
   const n=hitNode(sx,sy,exclude); if(n) return {x:n.x,y:n.y,kind:'node',nodeId:n.id};
@@ -771,7 +784,25 @@ function renderStatus(){
   }
   el.innerHTML=`<div class="status ${cls}"><div class="big">${big}</div><p>${body}</p>${kv}</div>`;
 }
+function renderQuick(){
+  const q=document.getElementById('quick'), s=state.sel, st=document.getElementById('stage');
+  const item = s && (s.type==='member'?memberById(s.id):nodeById(s.id));
+  if(!item){ q.className=''; q.innerHTML=''; st.classList.remove('hasq'); return; }
+  let edit;
+  if(s.type==='member') edit=`<label class="field" style="margin:0">Size / material<select data-k="section">${sectionOptions(item.section)}</select></label>`;
+  else edit=`<label class="field" style="margin:0">Support<select data-k="support">${[['none','None (free joint)'],...SUPPORTS.map(x=>[x[0],supportName(x[0])])].map(([v,l])=>`<option value="${v}"${item.support===v?' selected':''}>${l}</option>`).join('')}</select></label>`;
+  q.innerHTML=`<div class="qh"><b>${s.type==='member'?'Member '+memName(item):'Joint '+nodeName(item)}</b><span id="qres"></span><button class="x" data-act="close" aria-label="Close">×</button></div>${edit}
+    <div class="qrow"><button class="btn primary" data-act="details">All details & settings ↓</button><button class="btn danger" data-act="del">Delete</button></div>`;
+  q.className='on'; st.classList.add('hasq'); renderQuickRes();
+}
+function renderQuickRes(){
+  const el=document.getElementById('qres'); if(!el) return; const s=state.sel, c=getCombo();
+  if(!s||!c||s.type!=='member'||!c.mem[s.id]){ el.innerHTML=''; return; }
+  const u=c.mem[s.id].maxU, cls=u>1+1e-9?'bad':u>0.85?'warn':'ok';
+  el.innerHTML=`<span class="pill ${cls}">${u>1+1e-9?'FAILS ':''}${fmt(u*100)}%</span>`;
+}
 function renderSel(){
+  renderQuick();
   const el=document.getElementById('sel'), s=state.sel;
   if(!s){ el.innerHTML=`<div class="card"><h3>Selection</h3><div class="muted">Click a member or joint with the <b>Select</b> tool to see its size, loads and detailed results.</div></div>`; return; }
   if(s.type==='member'){ const m=memberById(s.id); if(!m){state.sel=null;return renderSel();} const a=nodeById(m.a), b=nodeById(m.b);
@@ -794,8 +825,9 @@ function renderSel(){
   }
 }
 let editCk=false;
-const selEl=document.getElementById('sel');
-selEl.addEventListener('focusin',()=>{editCk=false;});
+const selEl=document.getElementById('sel'), quickEl=document.getElementById('quick');
+for(const el of [selEl,quickEl]){
+el.addEventListener('focusin',()=>{editCk=false;});
 function applyField(t){
   const k=t.dataset.k; if(!k||!state.sel) return;
   if(!editCk){ checkpoint(); editCk=true; }
@@ -807,15 +839,18 @@ function applyField(t){
     else if(k==='section'){ m.section=val; if(val==='custom'){ const p=props({section:DEFAULT_SECTION}); m.cb=m.cb||1.5; m.cd=m.cd||5.5; m.cmat=m.cmat||'dfl'; } rebuild=true; }
     else m[k]=val;
   } else { const n=nodeById(state.sel.id); n[k]= (k==='x'||k==='y')? r6(val) : val; }
-  update(); if(rebuild) renderSel();
+  update(); if(rebuild) renderSel(); else renderQuick();
 }
-selEl.addEventListener('input',e=>{ if(e.target.type==='number') applyField(e.target); });
-selEl.addEventListener('change',e=>{ if(e.target.type!=='number') applyField(e.target); editCk=false; });
-selEl.addEventListener('click',e=>{ const b=e.target.closest('[data-act]'); if(!b||!state.sel) return; const act=b.dataset.act;
+el.addEventListener('input',e=>{ if(e.target.type==='number') applyField(e.target); });
+el.addEventListener('change',e=>{ if(e.target.type!=='number') applyField(e.target); editCk=false; });
+el.addEventListener('click',e=>{ const b=e.target.closest('[data-act]'); if(!b||!state.sel) return; const act=b.dataset.act;
+  if(act==='close'){ select(null); return; }
+  if(act==='details'){ document.getElementById('sel').scrollIntoView({behavior:'smooth',block:'start'}); return; }
   if(act==='del'){ checkpoint(); if(state.sel.type==='member') deleteMember(state.sel.id); else deleteNode(state.sel.id); state.sel=null; changed(); }
   else if(act==='allsize'){ const m=memberById(state.sel.id); checkpoint(); model.members.forEach(x=>{ x.section=m.section; x.cb=m.cb; x.cd=m.cd; x.cmat=m.cmat; }); changed(); }
   else if(act==='split'){ const m=memberById(state.sel.id), a=nodeById(m.a), b=nodeById(m.b); checkpoint(); const n=splitMember(m,(a.x+b.x)/2,(a.y+b.y)/2); state.sel={type:'node',id:n.id}; changed(); }
 });
+}
 function miniChart(arr,L,color,title,conv,unit){
   const W=300,H=74,pad=4; let mx=0; for(const v of arr) mx=Math.max(mx,Math.abs(v)); const k=mx>0?(H/2-10)/mx:0;
   const pts=[...arr].map((v,i)=>[pad+i/NS*(W-2*pad), H/2-v*k]);
@@ -825,6 +860,7 @@ function miniChart(arr,L,color,title,conv,unit){
   <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="background:#f8fafc;border-radius:8px"><path d="M0 ${H/2}H${W}" stroke="#cbd5e1"/><path d="${d}" fill="${color}" fill-opacity=".18" stroke="${color}" stroke-width="1.8"/><circle cx="${pts[mi][0]}" cy="${pts[mi][1]}" r="3" fill="${color}"/></svg></div>`;
 }
 function renderSelRes(){
+  renderQuickRes();
   const el=document.getElementById('selres'), s=state.sel, c=getCombo();
   if(!s||!c){ el.innerHTML=''; return; }
   if(s.type==='member'){ const m=memberById(s.id), C=m&&c.mem[m.id]; if(!C){el.innerHTML='';return;}
@@ -885,7 +921,7 @@ function toolClick(sx,sy){
 svg.addEventListener('contextmenu',e=>e.preventDefault());
 svg.addEventListener('pointerdown',e=>{
   stopAnim();
-  const p=spos(e); svg.setPointerCapture(e.pointerId); pointers.set(e.pointerId,p); state.cursor=p;
+  state.coarse=e.pointerType!=='mouse'; const p=spos(e); svg.setPointerCapture(e.pointerId); pointers.set(e.pointerId,p); state.cursor=p;
   if(pointers.size===2){ const [a,b]=[...pointers.values()]; state.drag={type:'pinch', d0:Math.hypot(a.x-b.x,a.y-b.y), c0:{x:(a.x+b.x)/2,y:(a.y+b.y)/2}, v0:{...state.view}}; if(state.tool==='member'&&state.pending&&state.pendingFresh) state.pending=null; return; }
   if(pointers.size>2) return;
   const base={sx:p.x, sy:p.y, ox:state.view.ox, oy:state.view.oy, moved:false};
@@ -913,7 +949,7 @@ svg.addEventListener('pointermove',e=>{
     if((t==='support'||t==='point')&&state.snap&&state.snap.kind!=='node'&&state.snap.kind!=='member') state.snap=null;
     svg.style.cursor = t==='select'? (h?'pointer':'grab') : t==='delete'? (h?'not-allowed':'default') : 'crosshair';
     schedule(); return; }
-  const mv=Math.hypot(p.x-d.sx,p.y-d.sy)>5;
+  const mv=Math.hypot(p.x-d.sx,p.y-d.sy)>(state.coarse?14:5);
   if(d.type==='pan'||d.type==='click'){ if(mv||d.moved){ d.moved=true; state.view.ox=d.ox+(p.x-d.sx); state.view.oy=d.oy+(p.y-d.sy); svg.style.cursor='grabbing'; schedule(); } }
   else if(d.type==='node'){ if(mv||d.moved){ if(!d.moved){checkpoint(); d.moved=true;} const n=nodeById(d.id), q=snapAt(p.x,p.y,{exclude:d.id,members:false,free:e.shiftKey}); n.x=q.x; n.y=q.y; d.target=q.kind==='node'?q.nodeId:null; state.hover=null; update(); } }
   else if(d.type==='mem'){ if(mv||d.moved){ if(!d.moved){checkpoint(); d.moved=true;} const m=memberById(d.id), a=nodeById(m.a), b=nodeById(m.b), w0=s2w(d.sx,d.sy), g=e.shiftKey?1e-6:state.grid;
