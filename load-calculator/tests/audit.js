@@ -82,6 +82,16 @@ const { chromium } = require('playwright');
     run(B=>{a=B.n(0,0,'pin');bn=B.n(0,8,'rollerX');B.m(a,bn,{section:'dfl:4x4'});bn.fy=2000;}); n=getOrCreateNode({x:0,y:4}); n.fx=300; update();
     { const A=3.5*3.5, S=3.5**3/6, Ii=3.5**4/12, Pe=Math.PI**2*580000*Ii/96**2, Cc=Math.min(Pe,1350*1.15*A), Mm=300*96/4;
       chk('20 4x4 post, 2000 lb + 300 lb side load: P/Pc + M/Mc',C(0).maxU,2000/Cc+Mm/(900*1.5*S)); }
+    // 21 member end forces and joint balance
+    run(B=>{a=B.n(0,0,'pin');bn=B.n(12,0,'rollerY');B.m(a,bn,{section:W,w:100});});
+    { const e=memberEnds(model.members[0].id); chk('21 Beam end force on each support: ↓ wL/2',-e[0].fy,600); chk('21 Beam end force at far end: ↓ wL/2',-e[1].fy,600); }
+    for(const k of ['gable','fink','portal']){ model=TEMPLATES[k](); update(); const c=getCombo(); let worst=0;
+      for(const nd of model.nodes){ const i=state.res.idx.get(nd.id); let fx=(+nd.fx||0), fy=-(+nd.fy||0), m=0;
+        for(const e of jointMembers(nd.id)){ fx+=e.fx; fy+=e.fy; m+=e.m; } fx+=c.R[3*i]; fy+=c.R[3*i+1]; m+=c.R[3*i+2];
+        worst=Math.max(worst,Math.abs(fx),Math.abs(fy),Math.abs(m)/12); }
+      chk(`21 Template "${k}": every joint balances (members + load + support = 0)`,worst,0,1e-6); }
+    model=build(B=>{a=B.n(0,0,'pin');bn=B.n(12,0,'rollerY');B.m(a,bn,{section:W,w:100});}); model.selfWeight=false; n=getOrCreateNode({x:6,y:0}); n.support='rollerY'; update();
+    { const jm=jointMembers(n.id); chk('21 Beam over a middle support: one entry for the beam',jm.length,1); chk('21 Beam over a middle support: pushes ↓ 1.25wL on it',-jm[0].fy,750); }
     return R;
   });
   let pass=0; for(const r of rows){ console.log(r[0].padEnd(5), r[1].padEnd(66), 'app:', String(r[2]).padEnd(12), 'expected:', r[3]); if(r[0]==='PASS') pass++; }

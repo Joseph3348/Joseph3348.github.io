@@ -155,6 +155,7 @@ table.res small{color:var(--ink3);display:block}
   #pbody{display:none;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:0 12px 14px;flex:1}
   #panel.open #pbody{display:flex}
   #pbody.hassel #sel{order:-2} #pbody.hassel #selres{order:-1}
+  #pbody.hassel.isnode #selres{order:-3}
   #tools{order:3;flex-direction:row;border-right:0;border-top:1px solid var(--line);padding:4px 4px calc(4px + env(safe-area-inset-bottom));gap:2px;overflow-x:auto;position:relative;z-index:5}
   .tool{flex:1;min-width:52px;padding:6px 2px;font-size:11px;gap:2px}
   .tool kbd{display:none}
@@ -805,7 +806,9 @@ function render(){
   // --- labels
   for(const l of labels){ let nx=-l.dy, ny=l.dx; const len=Math.hypot(nx,ny)||1; nx/=len; ny/=len; if(ny>0){nx=-nx;ny=-ny;}
     const fail=l.u>1+1e-9, txt=(l.nb>1?l.nb+'× · ':'')+(fail?'FAIL ':'')+fmt(l.u*100)+'%', w=txt.length*6.6+12, x=l.x+nx*20, y=l.y+ny*20;
-    o.push(`<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})"><rect x="${-w/2}" y="-10" width="${w}" height="20" rx="10" fill="${fail?'#b91c1c':'#fff'}" stroke="${fail?'#7f1d1d':utilColor(l.u)}" stroke-width="1.5"/><text text-anchor="middle" y="4" font-size="11.5" font-weight="800" fill="${fail?'#fff':'#0f172a'}">${txt}</text></g>`); }
+    const faded=state.sel&&!(state.sel.type==='member'&&state.sel.id===l.id);
+    o.push(`<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})"${faded?' opacity=".3"':''}><rect x="${-w/2}" y="-10" width="${w}" height="20" rx="10" fill="${fail?'#b91c1c':'#fff'}" stroke="${fail?'#7f1d1d':utilColor(l.u)}" stroke-width="1.5"/><text text-anchor="middle" y="4" font-size="11.5" font-weight="800" fill="${fail?'#fff':'#0f172a'}">${txt}</text></g>`); }
+  if(combo) drawEndForces(o);
   // --- drawing preview
   if(state.tool==='member'&&state.pending){ const [x,y]=w2s(state.pending.x,state.pending.y); o.push(`<circle cx="${x}" cy="${y}" r="15" fill="none" stroke="${COL.sel}" stroke-width="2.5" class="pulse"/><circle cx="${x}" cy="${y}" r="7" fill="${COL.sel}"/>`); }
   if(state.tool==='member'&&state.pending&&state.snap){ const p=state.pending, q=state.snap; const [x1,y1]=w2s(p.x,p.y), [x2,y2]=w2s(q.x,q.y);
@@ -887,6 +890,38 @@ function drawReactions(o,combo){
     reactionLines(combo,n,tiny).forEach((t,k)=>o.push(`<text x="${x}" y="${yb+13+k*14}" text-anchor="middle" font-size="11.5" font-weight="700" fill="${COL.react}" stroke="#fff" stroke-width="3" paint-order="stroke">${t}</text>`));
   }
 }
+// ---- member end forces: what a member pushes/pulls on the joint at each of its ends ----
+// (equal and opposite to what the joint/connection does to the member, so it is the load the connection must carry)
+function pieceOnJoint(me,lam,end){ const [a,b]=me.res, o=end?3:0, F=k=>a.F[k]+lam*b.F[k], f0=F(o), f1=F(o+1), f2=F(o+2);
+  return {fx:-(me.c*f0-me.s*f1), fy:-(me.s*f0+me.c*f1), m:-f2, N:end?f0:-f0, V:Math.abs(f1)}; }
+const piecesOf = id => state.res.ME.filter(me=>state.res.parentOf[me.id].m===id).sort((x,y)=>state.res.parentOf[x.id].k-state.res.parentOf[y.id].k);
+function memberEnds(id){ const ps=piecesOf(id); if(!ps.length) return []; const lam=state.mult, f=ps[0], l=ps[ps.length-1];
+  return [{node:f.m.a, me:f, end:0, ...pieceOnJoint(f,lam,0)}, {node:l.m.b, me:l, end:1, ...pieceOnJoint(l,lam,1)}]; }
+function jointMembers(nodeId){ const lam=state.mult, g=new Map();
+  for(const me of state.res.ME){ for(const end of [0,1]){ if((end?me.m.b:me.m.a)!==nodeId) continue; const pid=state.res.parentOf[me.id].m, q=pieceOnJoint(me,lam,end);
+    const e=g.get(pid)||{id:pid,fx:0,fy:0,m:0,n:0,N:q.N,me,end}; e.fx+=q.fx; e.fy+=q.fy; e.m+=q.m; e.n++; if(me.L>e.me.L){ e.me=me; e.end=end; } g.set(pid,e); } }
+  return [...g.values()].map(e=>({...e, N:e.n===1?e.N:null})); }
+const fmtK=v=>{ const a=Math.abs(v); return a<999.5?fmtSmart(a):(a/1000).toFixed(a<9950?1:0)+'k'; };
+// short form for tags on the drawing (lb, lb·ft implied — the panel has full values)
+function forceShort(fx,fy,m){ const big=Math.max(Math.abs(fx),Math.abs(fy)), thr=Math.max(0.5,0.01*big), p=[];
+  if(Math.abs(fy)>thr) p.push(`${fy>0?'↑':'↓'}${fmtK(fy)}`); if(Math.abs(fx)>thr) p.push(`${fx>0?'→':'←'}${fmtK(fx)}`);
+  if(Math.abs(m)/12>Math.max(1,big*0.002)) p.push(`${m>0?'⟲':'⟳'}${fmtK(m/12)}`); return p.length?p.join(' '):'0'; }
+function forceText(fx,fy,m,{unit=true}={}){ const big=Math.max(Math.abs(fx),Math.abs(fy)), thr=Math.max(0.5,0.01*big), p=[];
+  if(Math.abs(fy)>thr) p.push(`${fy>0?'↑':'↓'} ${fmtSmart(Math.abs(fy))}`); if(Math.abs(fx)>thr) p.push(`${fx>0?'→':'←'} ${fmtSmart(Math.abs(fx))}`);
+  let t=p.length?p.join('  ')+(unit?' lb':''):'0 lb'; if(Math.abs(m)/12>Math.max(1,big*0.002)) t+=`  ${m>0?'⟲':'⟳'} ${fmtSmart(Math.abs(m)/12)} lb·ft`; return t; }
+function forceTag(o,x,y,txt,placed){ const w=txt.length*6.3+14, r={x0:x-w/2-3,x1:x+w/2+3,y0:y-13,y1:y+13};
+  if(placed&&placed.some(q=>r.x0<q.x1&&r.x1>q.x0&&r.y0<q.y1&&r.y1>q.y0)) return false; // never stack tags; the panel always has the full list
+  if(placed) placed.push(r); o.push(`<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})"><rect x="${-w/2}" y="-10" width="${w}" height="20" rx="10" fill="#1e293b" opacity=".92"/><text text-anchor="middle" y="4" font-size="11" font-weight="700" fill="#fff">${txt}</text></g>`); return true; }
+// place a tag on member piece `me`, a little way in from its joint at `end`
+function tagNearEnd(o,me,end,txt,placed){ const a=nodeById(me.m.a), b=nodeById(me.m.b); if(!a||!b) return; const [ax,ay]=w2s(a.x,a.y), [bx,by]=w2s(b.x,b.y), Ls=Math.hypot(bx-ax,by-ay); const tw=txt.length*6.3+14; if(Ls<44||tw>Ls*1.3) return; // member too short on screen for this tag
+  const d=Math.min(52,Ls*0.38), [jx,jy]=end?[bx,by]:[ax,ay], ux=(end?ax-bx:bx-ax)/Ls, uy=(end?ay-by:by-ay)/Ls; forceTag(o,jx+ux*d,jy+uy*d,txt,placed); }
+function drawEndForces(o){
+  const items=[], placed=[]; const add=h=>{ if(h&&!items.some(x=>x.type===h.type&&x.id===h.id)) items.push(h); }; add(state.sel); if(!state.coarse) add(state.hover);
+  for(const it of items){
+    if(it.type==='member'){ if(!memberById(it.id)) continue; for(const e of memberEnds(it.id)) tagNearEnd(o,e.me,e.end,forceShort(e.fx,e.fy,e.m),placed); }
+    else if(nodeById(it.id)&&state.res.idx.get(it.id)!=null){ for(const e of jointMembers(it.id)) tagNearEnd(o,e.me,e.end,forceShort(e.fx,e.fy,e.m),placed); }
+  }
+}
 // ---- dimensions (feet-inches to the nearest 1/8") ----
 function fmtFtIn(ft){ let tin=Math.round(Math.abs(ft)*96)/8, f=Math.floor(tin/12+1e-9), inch=tin-f*12, w=Math.floor(inch+1e-9), fr=Math.round((inch-w)*8);
   if(fr===8){ w++; fr=0; } if(w===12){ f++; w=0; } let fs=''; if(fr){ let n=fr,d=8; while(n%2===0){ n/=2; d/=2; } fs=` ${n}/${d}`; } return `${f}'-${w}${fs}"`; }
@@ -940,8 +975,10 @@ function updateTip(){
   let html='';
   if(h.type==='member'){ const m=memberById(h.id); if(!m){tip.style.display='none';return;} const a=nodeById(m.a), b=nodeById(m.b);
     html=`<b>${memName(m)}</b> · ${esc(boardsLabel(m))} · ${fmt(Math.hypot(b.x-a.x,b.y-a.y),2)} ft`;
-    if(c&&c.mem[m.id]){ const C=c.mem[m.id]; html+=`<br><span style="color:${C.maxU>1?'#fca5a5':'#86efac'}">${C.maxU>1?'FAILS':'OK'} — ${fmt(C.maxU*100)}% of capacity</span> (${C.gov.toLowerCase()})`; } }
-  else { const n=nodeById(h.id); if(!n){tip.style.display='none';return;} html=`<b>Joint ${nodeName(n)}</b> (${fmt(n.x,2)}, ${fmt(n.y,2)}) ft`; if(n.support!=='none') html+=` · ${supportName(n.support)}`; }
+    if(c&&c.mem[m.id]){ const C=c.mem[m.id]; html+=`<br><span style="color:${C.maxU>1?'#fca5a5':'#86efac'}">${C.maxU>1?'FAILS':'OK'} — ${fmt(C.maxU*100)}% of capacity</span> (${C.gov.toLowerCase()})`;
+      html+=memberEnds(m.id).map(e=>{ const n=nodeById(e.node); return `<br><span style="color:#cbd5e1">at ${n?nodeName(n):'?'}:</span> ${forceText(e.fx,e.fy,e.m)}`; }).join(''); } }
+  else { const n=nodeById(h.id); if(!n){tip.style.display='none';return;} html=`<b>Joint ${nodeName(n)}</b> (${fmt(n.x,2)}, ${fmt(n.y,2)}) ft`; if(n.support!=='none') html+=` · ${supportName(n.support)}`;
+    if(c&&state.res.idx.get(n.id)!=null) html+=jointMembers(n.id).map(e=>{ const mm=memberById(e.id); return `<br><span style="color:#cbd5e1">from ${mm?memName(mm):'?'}:</span> ${forceText(e.fx,e.fy,e.m)}`; }).join(''); }
   tip.innerHTML=html; tip.style.display='block';
   const W=svg.clientWidth; let x=state.cursor.x+16, y=state.cursor.y+18; if(x+tip.offsetWidth>W-8) x=state.cursor.x-tip.offsetWidth-12; tip.style.left=x+'px'; tip.style.top=y+'px';
 }
@@ -1025,7 +1062,7 @@ function setSheet(open){ state.sheet=!!open; document.getElementById('panel').cl
 
 function renderSel(){
   const el=document.getElementById('sel'), s=state.sel;
-  document.getElementById('pbody').classList.toggle('hassel',!!s); renderPeek();
+  document.getElementById('pbody').classList.toggle('hassel',!!s); document.getElementById('pbody').classList.toggle('isnode',!!s&&s.type==='node'); renderPeek();
   if(!s){ el.innerHTML=`<div class="card"><h3>Selection</h3><div class="muted">Tap a member or joint with the <b>Select</b> tool to see its size, loads and detailed results.</div></div>`; return; }
   if(s.type==='member'){ const m=memberById(s.id); if(!m){state.sel=null;return renderSel();} const a=nodeById(m.a), b=nodeById(m.b);
     const L=Math.hypot(b.x-a.x,b.y-a.y), ang=Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI, pitch=Math.abs(b.x-a.x)>1e-9?Math.abs((b.y-a.y)/(b.x-a.x))*12:Infinity;
@@ -1112,6 +1149,9 @@ function renderSelRes(){
       <div class="ubar"><i style="width:${Math.min(100,u/1.5*100)}%;background:${utilColor(u)}"></i><span class="lim" style="left:${100/1.5}%"></span></div>
       <div class="muted">Governed by <b>${C.gov.toLowerCase()}</b> at ${fmt(C.t[C.at]*L,1)} ft from ${nodeName(nodeById(m.a))}.</div>
       <table class="res">${rows.map(r=>`<tr><td>${r[0]}${r[2]?`<small>${r[2]}</small>`:''}</td><td><b>${r[1]}</b></td></tr>`).join('')}</table>
+      <div class="sub" style="margin-top:12px;font-weight:700;font-size:13px">Forces at the ends</div>
+      <div class="muted">What this member pushes or pulls on each joint — the load that connection (nails, hanger, bearing) has to hold. Dark tags on the drawing show the same (in lb; “k” = thousand) where there's room.</div>
+      <table class="res">${memberEnds(m.id).map(e=>{ const n=nodeById(e.node); return `<tr><td>At ${n?nodeName(n):'?'}${e===memberEnds(m.id)[0]?' (start)':' (end)'}<small>${Math.abs(e.N)<0.5?'no push/pull along it':`${fmtSmart(Math.abs(e.N))} lb ${e.N>0?'pull':'push'} along the member`} · ${fmtSmart(e.V)} lb across it</small></td><td><b>${forceText(e.fx,e.fy,e.m)}</b></td></tr>`; }).join('')}</table>
       ${miniChart(C.M,C.t,L,'#8b5cf6','Bending moment',v=>v/12,'lb·ft')}
       ${miniChart(C.V,C.t,L,'#0284c7','Shear',v=>v,'lb')}
       ${Math.abs(C.mN)>0.5?miniChart(C.N,C.t,L,comp?'#2563eb':'#ea580c','Axial (+pull / −push)',v=>v,'lb'):''}</div>`;
@@ -1120,9 +1160,16 @@ function renderSelRes(){
     if(r[3*i]) rr+=`<tr><td>Sideways reaction</td><td><b>${fmtSmart(Math.abs(c.R[3*i]))} lb ${c.R[3*i]>=0?'→':'←'}</b></td></tr>`;
     if(r[3*i+1]) rr+=`<tr><td>Vertical reaction<small>what the support pushes back with</small></td><td><b>${fmtSmart(Math.abs(c.R[3*i+1]))} lb ${c.R[3*i+1]>=0?'↑':'↓'}</b></td></tr>`;
     if(r[3*i+2]) rr+=`<tr><td>Moment reaction</td><td><b>${fmtSmart(Math.abs(c.R[3*i+2])/12)} lb·ft</b></td></tr>`;
-    el.innerHTML=`<div class="card"><h3>Results — Joint ${nodeName(n)}</h3><table class="res">
+    const jm=jointMembers(n.id), pfx=(+n.fx||0)*state.mult, pfy=-(+n.fy||0)*state.mult;
+    let fr=jm.map(e=>{ const mm=memberById(e.id); return `<tr><td>From ${mm?memName(mm):'?'}<small>${e.N==null?'continues through this joint':Math.abs(e.N)<0.5?'no push/pull along it':`${fmtSmart(Math.abs(e.N))} lb ${e.N>0?'pull':'push'} along the member`}</small></td><td><b>${forceText(e.fx,e.fy,e.m)}</b></td></tr>`; }).join('');
+    if(pfx||pfy) fr+=`<tr><td>Point load</td><td><b>${forceText(pfx,pfy,0)}</b></td></tr>`;
+    if(r[3*i]||r[3*i+1]||r[3*i+2]) fr+=`<tr><td>Support pushes back<small>the reaction — it balances everything above</small></td><td><b>${forceText(c.R[3*i],c.R[3*i+1],c.R[3*i+2])}</b></td></tr>`;
+    el.innerHTML=`<div class="card"><h3>Results — Joint ${nodeName(n)}</h3>
+      <div class="sub" style="font-weight:700;font-size:13px">Forces on this joint</div><div class="muted">What each member pushes or pulls on it (dark tags on the drawing, where there's room). Together they always balance out.</div>
+      <table class="res">${fr||'<tr><td>No forces</td><td></td></tr>'}</table>
+      <div class="sub" style="margin-top:12px;font-weight:700;font-size:13px">Movement</div><table class="res">
       <tr><td>Moves sideways</td><td><b>${fmt(Math.abs(dx),3)} in ${Math.abs(dx)<5e-4?'':dx>0?'→':'←'}</b></td></tr>
-      <tr><td>Moves up/down</td><td><b>${fmt(Math.abs(dy),3)} in ${Math.abs(dy)<5e-4?'':dy>0?'↑':'↓'}</b></td></tr>${rr}</table></div>`;
+      <tr><td>Moves up/down</td><td><b>${fmt(Math.abs(dy),3)} in ${Math.abs(dy)<5e-4?'':dy>0?'↑':'↓'}</b></td></tr></table></div>`;
   }
 }
 function select(type,id,openSheet=true){ state.sel= type?{type,id}:null; renderSel(); renderSelRes();
