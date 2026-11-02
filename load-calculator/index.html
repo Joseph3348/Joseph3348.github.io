@@ -1,0 +1,1042 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Load Calculator — 2D Structural Analysis</title>
+<meta name="description" content="Draw beams, rafters, trusses and frames, add loads and supports, and instantly see stresses, deflection and what fails.">
+<style>
+:root{
+  --bg:#eef2f7; --panel:#ffffff; --ink:#0f172a; --ink2:#475569; --ink3:#94a3b8; --line:#e2e8f0;
+  --accent:#2563eb; --accent2:#dbeafe; --ok:#15803d; --okbg:#dcfce7; --bad:#b91c1c; --badbg:#fee2e2;
+  --warn:#b45309; --warnbg:#fef3c7; --load:#7c3aed; --react:#0e7490;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+button,select,input{font:inherit;color:inherit}
+header{height:54px;display:flex;align-items:center;gap:10px;padding:0 14px;background:#0f172a;color:#fff}
+header .logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px;white-space:nowrap;margin-right:6px}
+header .logo svg{flex:none}
+header .sp{flex:1}
+header select,header button{background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;height:34px;padding:0 10px;cursor:pointer}
+header button:hover,header select:hover{background:#334155}
+header button:disabled{opacity:.4;cursor:default}
+.hbtns{display:flex;gap:6px}
+main{display:grid;grid-template-columns:86px 1fr 350px;height:calc(100% - 54px)}
+#tools{background:var(--panel);border-right:1px solid var(--line);padding:10px 8px;display:flex;flex-direction:column;gap:6px;overflow:auto}
+.tool{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 4px 7px;border:1px solid transparent;border-radius:10px;background:none;cursor:pointer;color:var(--ink2);font-size:12px;font-weight:600}
+.tool:hover{background:#f1f5f9}
+.tool.on{background:var(--accent2);border-color:#93c5fd;color:var(--accent)}
+.tool kbd{font:10px ui-monospace,monospace;color:var(--ink3)}
+#stage{position:relative;overflow:hidden;background:#f8fafc}
+#cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none;user-select:none;-webkit-user-select:none;display:block}
+#opts{position:absolute;left:12px;top:12px;right:120px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;pointer-events:none}
+#opts>.box{pointer-events:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;box-shadow:0 2px 8px rgba(15,23,42,.06)}
+#opts label{display:flex;align-items:center;gap:6px;color:var(--ink2);font-size:13px}
+#opts input[type=number]{width:80px}
+#opts .ttl{font-weight:700;color:var(--ink)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:5px 10px;cursor:pointer;font-size:13px;color:var(--ink2);display:flex;align-items:center;gap:5px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--accent);color:#fff}
+input[type=number],input[type=text],select{border:1px solid #cbd5e1;border-radius:7px;padding:5px 7px;background:#fff;min-width:0}
+input:focus,select:focus{outline:2px solid #93c5fd;outline-offset:0;border-color:var(--accent)}
+#zoom{position:absolute;right:12px;top:12px;display:flex;flex-direction:column;gap:6px}
+#zoom button{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:18px;color:var(--ink2);box-shadow:0 2px 8px rgba(15,23,42,.06)}
+#zoom button:hover{background:#f1f5f9}
+#hint{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;background:rgba(15,23,42,.86);color:#fff;padding:7px 14px;border-radius:999px;font-size:13px;max-width:calc(100% - 24px);text-align:center;pointer-events:none}
+#coords{position:absolute;left:12px;bottom:14px;font:12px ui-monospace,monospace;color:var(--ink2);background:rgba(255,255,255,.85);padding:3px 7px;border-radius:6px;pointer-events:none}
+#legend{position:absolute;right:12px;bottom:14px;background:rgba(255,255,255,.95);border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-size:11px;color:var(--ink2);pointer-events:none}
+#legend .bar{width:180px;height:10px;border-radius:5px;background:linear-gradient(90deg,hsl(130,72%,40%),hsl(97,72%,42%),hsl(65,80%,44%),hsl(32,90%,48%),hsl(0,78%,46%));margin:4px 0 2px;position:relative}
+#legend .bar::after{content:"";position:absolute;right:-26px;top:0;width:22px;height:10px;border-radius:3px;background:#7f1d1d}
+#legend .ticks{display:flex;justify-content:space-between;width:206px}
+#tip{position:absolute;pointer-events:none;background:#0f172a;color:#fff;font-size:12px;padding:6px 9px;border-radius:8px;display:none;white-space:nowrap;z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+#panel{background:var(--panel);border-left:1px solid var(--line);overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px}
+.card h3{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3)}
+.status{border-radius:12px;padding:14px;border:1px solid}
+.status .big{font-size:20px;font-weight:800;display:flex;align-items:center;gap:8px}
+.status p{margin:6px 0 0;color:inherit;opacity:.9}
+.status.ok{background:var(--okbg);border-color:#86efac;color:#14532d}
+.status.bad{background:var(--badbg);border-color:#fca5a5;color:#7f1d1d}
+.status.warn{background:var(--warnbg);border-color:#fcd34d;color:#78350f}
+.status.neutral{background:#f1f5f9;border-color:var(--line);color:var(--ink2)}
+.kv{display:grid;grid-template-columns:1fr auto;gap:4px 10px;margin-top:10px;font-size:13px}
+.kv span:nth-child(odd){color:inherit;opacity:.8}
+.kv b{text-align:right}
+.mult{display:flex;align-items:center;gap:10px}
+.mult input[type=range]{flex:1;accent-color:var(--accent)}
+.mult output{font-weight:800;min-width:52px;text-align:right;font-variant-numeric:tabular-nums}
+.btn{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:7px 11px;cursor:pointer;font-weight:600;color:var(--ink)}
+.btn:hover{background:#f1f5f9}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:#1d4ed8}
+.btn.danger{color:var(--bad);border-color:#fecaca}
+.btn.danger:hover{background:var(--badbg)}
+.btn.sm{padding:4px 9px;font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:4px;margin-top:9px;font-size:12px;color:var(--ink2);font-weight:600}
+.field input,.field select{font-weight:400;font-size:14px;color:var(--ink);width:100%}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:6px;cursor:pointer;color:var(--ink)}
+.chk input{width:16px;height:16px;accent-color:var(--accent)}
+.toggles{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px}
+.selh{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.selh .name{font-weight:800;font-size:16px}
+.muted{color:var(--ink3);font-size:12px}
+.ubar{height:14px;border-radius:7px;background:#e2e8f0;overflow:hidden;position:relative;margin:6px 0 2px}
+.ubar i{display:block;height:100%;border-radius:7px}
+.ubar .lim{position:absolute;top:-2px;bottom:-2px;width:2px;background:#0f172a}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800}
+.pill.ok{background:var(--okbg);color:var(--ok)}.pill.bad{background:var(--badbg);color:var(--bad)}.pill.warn{background:var(--warnbg);color:var(--warn)}
+table.res{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+table.res td{padding:4px 0;border-bottom:1px solid #f1f5f9;vertical-align:top}
+table.res td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+table.res small{color:var(--ink3);display:block}
+.chart{margin-top:10px}
+.chart .lbl{font-size:12px;font-weight:700;color:var(--ink2);display:flex;justify-content:space-between}
+.foot{font-size:11px;color:var(--ink3);line-height:1.5}
+#modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+#modal .dlg{background:#fff;border-radius:16px;max-width:620px;width:100%;max-height:90vh;overflow:auto;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+#modal h2{margin:0 0 4px;font-size:22px}
+#modal ol{padding-left:20px;margin:12px 0}
+#modal li{margin:7px 0}
+#modal .warnbox{background:var(--warnbg);color:#78350f;border-radius:10px;padding:10px 12px;font-size:13px;margin-top:12px}
+.pulse{animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.15}50%{opacity:.6}}
+.flash{animation:flash .5s ease-in-out 6}
+@keyframes flash{0%,100%{opacity:.2}50%{opacity:1}}
+@media (max-width:860px){
+  html,body{height:auto}
+  header{flex-wrap:wrap;height:auto;padding:8px 10px;gap:6px}
+  header .sp{display:none}
+  main{display:flex;flex-direction:column;height:auto}
+  #tools{flex-direction:row;border-right:0;border-bottom:1px solid var(--line);padding:6px;overflow-x:auto}
+  .tool{flex:1;min-width:58px}
+  .tool kbd{display:none}
+  #stage{height:62vh;min-height:360px}
+  #panel{border-left:0}
+  #opts{right:60px}
+  #legend{display:none}
+  #hint{font-size:12px;bottom:10px}
+  #coords{display:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#60a5fa" stroke-width="2.2" stroke-linejoin="round"><path d="M2 21 L13 5 L24 21 Z"/><path d="M7.5 21 L13 13 L18.5 21"/><path d="M13 5 L13 21" stroke="#f87171"/></svg>
+    Load Calculator
+  </div>
+  <select id="tpl" title="Start from a template">
+    <option value="">Templates…</option>
+    <option value="beam">Floor joist (simple beam)</option>
+    <option value="cant">Cantilever balcony beam</option>
+    <option value="gable">Gable roof: rafters + ceiling joist</option>
+    <option value="fink">Fink (W) roof truss</option>
+    <option value="portal">Steel portal frame</option>
+    <option value="blank">Blank canvas</option>
+  </select>
+  <div class="hbtns">
+    <button id="undo" title="Undo (Ctrl+Z)">↶ Undo</button>
+    <button id="redo" title="Redo (Ctrl+Y)">↷</button>
+  </div>
+  <div class="sp"></div>
+  <div class="hbtns">
+    <button id="share" title="Copy a link to this design">Share link</button>
+    <button id="export" title="Download design as a file">Save file</button>
+    <button id="import" title="Open a saved design file">Open</button>
+    <button id="help" title="How to use">?</button>
+  </div>
+  <input type="file" id="file" accept=".json,application/json" hidden>
+</header>
+<main>
+  <nav id="tools">
+    <button class="tool on" data-tool="select"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 3 L19 11 L12.5 12.5 L9.5 19 Z"/></svg>Select<kbd>V</kbd></button>
+    <button class="tool" data-tool="member"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 18 L19 6"/><circle cx="5" cy="18" r="2.4" fill="#fff"/><circle cx="19" cy="6" r="2.4" fill="#fff"/></svg>Member<kbd>M</kbd></button>
+    <button class="tool" data-tool="support"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 6 L18 15 L6 15 Z"/><path d="M4 19 H20"/><circle cx="12" cy="6" r="2" fill="#fff"/></svg>Support<kbd>S</kbd></button>
+    <button class="tool" data-tool="point"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 V17"/><path d="M7 12 L12 18 L17 12"/><path d="M4 21 H20"/></svg>Point load<kbd>P</kbd></button>
+    <button class="tool" data-tool="udl"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4 H21"/><path d="M5 4 V15 M3 12 L5 15 L7 12"/><path d="M12 4 V15 M10 12 L12 15 L14 12"/><path d="M19 4 V15 M17 12 L19 15 L21 12"/><path d="M3 19 H21"/></svg>Spread load<kbd>D</kbd></button>
+    <button class="tool" data-tool="delete"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7 H20"/><path d="M9 7 V4 H15 V7"/><path d="M6 7 L7 20 H17 L18 7"/></svg>Delete<kbd>X</kbd></button>
+  </nav>
+  <section id="stage">
+    <svg id="cv"></svg>
+    <div id="opts"></div>
+    <div id="zoom"><button id="zin" title="Zoom in">+</button><button id="zout" title="Zoom out">−</button><button id="zfit" title="Fit to screen (F)" style="font-size:13px">Fit</button></div>
+    <div id="coords"></div>
+    <div id="legend">Stress level (% of capacity)<div class="bar"></div><div class="ticks"><span>0%</span><span>50%</span><span>100%</span><span>FAIL</span></div></div>
+    <div id="hint"></div>
+    <div id="tip"></div>
+  </section>
+  <aside id="panel">
+    <div id="status"></div>
+    <div class="card">
+      <h3>Load scale</h3>
+      <div class="mult"><input type="range" id="mult" min="0" max="3" step="0.01" value="1"><output id="multOut">1.00×</output></div>
+      <div class="row" style="margin-top:8px;justify-content:space-between">
+        <button class="btn sm" id="mult1">Reset to 1×</button>
+        <button class="btn sm primary" id="breakBtn">▶ Find breaking point</button>
+      </div>
+      <label class="chk"><input type="checkbox" id="selfw" checked> Include weight of the members themselves</label>
+    </div>
+    <div class="card">
+      <h3>Show</h3>
+      <div class="toggles">
+        <label class="chk"><input type="checkbox" data-show="stress" checked> Stress colors</label>
+        <label class="chk"><input type="checkbox" data-show="deformed" checked> Bending shape</label>
+        <label class="chk"><input type="checkbox" data-show="values" checked> % labels</label>
+        <label class="chk"><input type="checkbox" data-show="reactions" checked> Reactions</label>
+        <label class="chk"><input type="checkbox" data-show="moment"> Moment</label>
+        <label class="chk"><input type="checkbox" data-show="shear"> Shear</label>
+        <label class="chk"><input type="checkbox" data-show="axial"> Push / pull</label>
+        <label class="chk"><input type="checkbox" data-show="loads" checked> Loads</label>
+      </div>
+      <div class="field" style="margin-top:8px">Bending shape exaggeration
+        <select id="defMode"><option value="auto">Auto (easy to see)</option><option value="1">True scale (1×)</option><option value="10">10×</option><option value="50">50×</option><option value="200">200×</option></select>
+      </div>
+    </div>
+    <div id="sel"></div>
+    <div id="selres"></div>
+    <div class="foot">Units: feet, pounds (lb), pounds per foot (lb/ft = plf). Simplified allowable-stress checks for learning and early sizing — not a substitute for a licensed engineer or your local building code.</div>
+  </aside>
+</main>
+
+<div id="modal"><div class="dlg">
+  <h2>2D Load Calculator</h2>
+  <div class="muted">Draw a structure, load it, and watch which parts are safe and which fail.</div>
+  <ol>
+    <li><b>Draw members</b> — pick <b>Member</b>, click a start point, click an end point. Keep clicking to chain members (great for rafters and trusses). Press <b>Esc</b> or right-click to stop. Points snap to the 1&nbsp;ft grid, to joints and onto other members.</li>
+    <li><b>Add supports</b> — pick <b>Support</b> and click where the structure sits on a wall, post or foundation. <i>Pin</i> holds in place, <i>Roller</i> only holds up/down, <i>Fixed</i> also prevents rotation (like a post set in concrete).</li>
+    <li><b>Add loads</b> — <b>Point load</b> for a concentrated weight at one spot; <b>Spread load</b> for weight along a member, in pounds per foot (e.g. roof snow + shingles, floor loads).</li>
+    <li><b>Read the colors</b> — green is comfortable, yellow is getting there, red is at the limit, and dark red pulsing means it <b>fails</b>. Click any member for detailed numbers.</li>
+    <li>Drag the <b>Load scale</b> slider or hit <b>Find breaking point</b> to see how much more load it takes before something gives.</li>
+  </ol>
+  <div class="muted"><b>Tips:</b> Select tool: drag joints to reshape, drag empty space to pan, scroll or pinch to zoom. Hold <b>Shift</b> to place without grid snapping. Change sizes and connections for a member in the right panel. “Pinned” connections act like a nailed/bolted truss joint that can rotate; “Rigid” joints are continuous.</div>
+  <div class="warnbox"><b>Heads up:</b> results use simplified allowable-stress checks (bending + push/pull, shear, and column buckling) with typical published values for Douglas Fir/SPF No.2 lumber, LVL, A992/A500 steel and 6061 aluminum. Use them for learning and rough sizing only — real designs need code load combinations, connection design and a qualified professional.</div>
+  <div class="row" style="margin-top:16px;justify-content:flex-end"><button class="btn" id="mTpl">Load a roof truss example</button><button class="btn primary" id="mClose">Start drawing</button></div>
+</div></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   MATERIAL & SECTION LIBRARY  (units: inches, pounds, psi)
+   ===================================================================== */
+const MATERIALS = {
+  dfl:  {name:'Douglas Fir-Larch No.2', E:1.6e6, Eb:580000, FSb:1,    Fb:900,   Ft:575,   Fc:1350,  Fv:180,   dens:34},
+  spf:  {name:'Spruce-Pine-Fir No.2',   E:1.4e6, Eb:510000, FSb:1,    Fb:875,   Ft:450,   Fc:1150,  Fv:135,   dens:29},
+  lvl:  {name:'LVL 2.0E',               E:2.0e6, Eb:1.016e6,FSb:1,    Fb:2600,  Ft:1555,  Fc:2510,  Fv:285,   dens:40},
+  a992: {name:'Steel A992 (50 ksi)',    E:29e6,  Eb:29e6,   FSb:1.9,  Fb:30000, Ft:30000, Fc:30000, Fv:20000, dens:490},
+  a500: {name:'Steel A500 tube (46 ksi)',E:29e6, Eb:29e6,   FSb:1.9,  Fb:27600, Ft:27600, Fc:27600, Fv:16560, dens:490},
+  al:   {name:'Aluminum 6061-T6',       E:10e6,  Eb:10e6,   FSb:1.95, Fb:19000, Ft:19000, Fc:19000, Fv:11000, dens:169},
+};
+function rectProps(b,d){ return {A:b*d, I:b*d*d*d/12, Imin:Math.min(b*d*d*d, d*b*b*b)/12, S:b*d*d/6, Av:2*b*d/3}; }
+const SECTIONS = {}, SECTION_GROUPS = [];
+function addGroup(label, list){ const ids=[]; for(const s of list){ SECTIONS[s.id]=s; ids.push(s.id);} SECTION_GROUPS.push({label, ids}); }
+// [name, b, d, CF(bending), CF(tension), CF(compression)] — NDS size factors for No.2 dimension lumber
+const LUMBER = [['2x4',1.5,3.5,1.5,1.5,1.15],['2x6',1.5,5.5,1.3,1.3,1.1],['2x8',1.5,7.25,1.2,1.2,1.05],['2x10',1.5,9.25,1.1,1.1,1],['2x12',1.5,11.25,1,1,1],
+                ['4x4',3.5,3.5,1.5,1.5,1.15],['4x6',3.5,5.5,1.3,1.3,1.1],['4x8',3.5,7.25,1.3,1.2,1.05],['6x6',5.5,5.5,1,1,1]];
+for(const [mat,short] of [['dfl','DF'],['spf','SPF']]){
+  addGroup('Lumber — '+MATERIALS[mat].name, LUMBER.filter(r=>mat==='dfl'||r[1]===1.5).map(([n,b,d,cb,ct,cc])=>({id:mat+':'+n, name:n, label:n+' '+short, mat, ...rectProps(b,d), cfb:cb, cft:ct, cfc:cc})));
+}
+addGroup('LVL engineered beams', [[1.75,9.25],[1.75,11.875],[3.5,11.875],[3.5,14],[5.25,11.875]].map(([b,d])=>({id:`lvl:${b}x${d}`, name:`${b}" × ${d}" LVL`, label:`${b}×${d} LVL`, mat:'lvl', ...rectProps(b,d), cfb:1,cft:1,cfc:1})));
+addGroup('Steel W-beams (A992)', [
+  ['W8x10',2.96,30.8,7.81,2.09,1.34],['W8x18',5.26,61.9,15.2,7.97,1.87],['W10x12',3.54,53.8,10.9,2.18,1.88],
+  ['W12x26',7.65,204,33.4,17.3,2.81],['W14x30',8.85,291,42.0,19.6,3.73],['W16x40',11.8,518,64.7,28.9,4.88]
+].map(([n,A,I,S,Imin,Av])=>({id:'w:'+n, name:n.replace('x','×'), label:n.replace('x','×'), mat:'a992', A,I,S,Imin,Av, cfb:1,cft:1,cfc:1})));
+addGroup('Steel square tube (HSS)', [
+  ['HSS3x3x3/16',1.89,2.46,1.64,1.04],['HSS4x4x1/4',3.37,7.80,3.90,1.86],['HSS6x6x1/4',5.24,28.6,9.54,2.80]
+].map(([n,A,I,S,Av])=>({id:'hss:'+n, name:n.replace(/x/g,'×'), label:n.replace(/x/g,'×'), mat:'a500', A,I,S,Imin:I,Av, cfb:1,cft:1,cfc:1})));
+addGroup('Aluminum tube (6061-T6)', [{id:'al:2x4x1/8', name:'2×4×1/8 rect tube', label:'2×4 alum tube', mat:'al', A:1.4375, I:2.976, S:1.488, Imin:0.992, Av:1.0, cfb:1,cft:1,cfc:1}]);
+const DEFAULT_SECTION = 'dfl:2x6';
+
+function props(m){
+  let s;
+  if(m.section==='custom'){
+    const b=Math.max(0.1,+m.cb||1.5), d=Math.max(0.1,+m.cd||5.5);
+    s={name:`${fmt(b,2)}" × ${fmt(d,2)}" custom`, label:`${fmt(b,2)}×${fmt(d,2)} custom`, mat:MATERIALS[m.cmat]?m.cmat:'dfl', ...rectProps(b,d), cfb:1,cft:1,cfc:1};
+  } else s = SECTIONS[m.section] || SECTIONS[DEFAULT_SECTION];
+  const mt = MATERIALS[s.mat];
+  return {...s, matName:mt.name, E:mt.E, Eb:mt.Eb, FSb:mt.FSb, Fb:mt.Fb*s.cfb, Ft:mt.Ft*s.cft, Fc:mt.Fc*s.cfc, Fv:mt.Fv, dens:mt.dens};
+}
+
+/* =====================================================================
+   FORMATTING
+   ===================================================================== */
+function fmt(v,d=0){ if(!isFinite(v)) return '—'; return (+v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function fmtSmart(v){ const a=Math.abs(v); return a>=100?fmt(v,0):a>=10?fmt(v,1):fmt(v,2); }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const NS = 20; // sample segments per member
+
+/* =====================================================================
+   MODEL
+   ===================================================================== */
+function emptyModel(){ return {v:1, nextId:1, nodes:[], members:[], selfWeight:true}; }
+let model = emptyModel();
+const nodeById = id => model.nodes.find(n=>n.id===id);
+const memberById = id => model.members.find(m=>m.id===id);
+const nodeName = n => 'J'+n.id;
+const memName = m => 'M'+m.id;
+function addNode(x,y){ const n={id:model.nextId++, x:r6(x), y:r6(y), support:'none', fx:0, fy:0}; model.nodes.push(n); return n; }
+function r6(v){ return Math.round(v*1e6)/1e6; }
+function nodeAt(x,y){ return model.nodes.find(n=>Math.abs(n.x-x)<1e-5 && Math.abs(n.y-y)<1e-5); }
+function projT(p,a,b){ const dx=b.x-a.x, dy=b.y-a.y, L2=dx*dx+dy*dy; return L2? ((p.x-a.x)*dx+(p.y-a.y)*dy)/L2 : 0; }
+function segDist(p,a,b){ const t=Math.max(0,Math.min(1,projT(p,a,b))); return Math.hypot(p.x-(a.x+t*(b.x-a.x)), p.y-(a.y+t*(b.y-a.y))); }
+function memberThrough(x,y){
+  const p={x,y};
+  for(const m of model.members){ const a=nodeById(m.a), b=nodeById(m.b); const t=projT(p,a,b); if(t>1e-6 && t<1-1e-6 && segDist(p,a,b)<1e-4) return m; }
+  return null;
+}
+function newMember(a,b,base){
+  const m={id:model.nextId++, a:a.id, b:b.id, section:base.section||DEFAULT_SECTION, release:base.release||'none', braced:base.braced!==false, w:+base.w||0, wType:base.wType||'gravity'};
+  if(base.section==='custom'){ m.cb=base.cb; m.cd=base.cd; m.cmat=base.cmat; }
+  model.members.push(m); return m;
+}
+function splitMember(m,x,y){
+  const n=addNode(x,y); const b=nodeById(m.b);
+  const m2=newMember(n,b,m);
+  const r=m.release;
+  m.b=n.id;
+  if(r==='both'){ m.release='both'; m2.release='both'; }
+  else if(r==='start'){ m.release='start'; m2.release='none'; }
+  else if(r==='end'){ m.release='none'; m2.release='end'; }
+  return n;
+}
+function getOrCreateNode(p){
+  const n = nodeAt(p.x,p.y); if(n) return n;
+  const m = memberThrough(p.x,p.y); if(m) return splitMember(m,p.x,p.y);
+  return addNode(p.x,p.y);
+}
+function memberExists(a,b){ return model.members.some(m=>(m.a===a.id&&m.b===b.id)||(m.a===b.id&&m.b===a.id)); }
+function addMemberSplit(na,nb,base){
+  if(na===nb) return null;
+  const on=model.nodes.filter(n=>n!==na&&n!==nb).map(n=>({n,t:projT(n,na,nb)})).filter(o=>o.t>1e-6&&o.t<1-1e-6&&segDist(o.n,na,nb)<1e-4).sort((p,q)=>p.t-q.t).map(o=>o.n);
+  const chain=[na,...on,nb]; let last=null;
+  for(let i=0;i<chain.length-1;i++){ if(!memberExists(chain[i],chain[i+1])) last=newMember(chain[i],chain[i+1],base); }
+  return last;
+}
+function removeOrphans(){ const used=new Set(); model.members.forEach(m=>{used.add(m.a);used.add(m.b);}); model.nodes=model.nodes.filter(n=>used.has(n.id)); }
+function deleteMember(id){ model.members=model.members.filter(m=>m.id!==id); removeOrphans(); }
+function deleteNode(id){ model.members=model.members.filter(m=>m.a!==id&&m.b!==id); model.nodes=model.nodes.filter(n=>n.id!==id); removeOrphans(); }
+function mergeNodes(fromId,toId){
+  const f=nodeById(fromId), t=nodeById(toId); if(!f||!t||f===t) return;
+  model.members.forEach(m=>{ if(m.a===fromId) m.a=toId; if(m.b===fromId) m.b=toId; });
+  if(t.support==='none') t.support=f.support;
+  t.fx=(+t.fx||0)+(+f.fx||0); t.fy=(+t.fy||0)+(+f.fy||0);
+  model.nodes=model.nodes.filter(n=>n!==f);
+  const seen=new Set();
+  model.members=model.members.filter(m=>{ if(m.a===m.b) return false; const k=Math.min(m.a,m.b)+'-'+Math.max(m.a,m.b); if(seen.has(k)) return false; seen.add(k); return true; });
+  removeOrphans();
+}
+
+/* =====================================================================
+   ANALYSIS — 2D frame, direct stiffness method, 3 DOF per joint
+   Local member axes: x along member (start→end), y = x rotated +90°.
+   Internal units: inches, pounds.
+   ===================================================================== */
+function udlGlobal(m,c,s){ // lb/in, global (qx, qy) with y up
+  const w=(+m.w||0)/12; if(!w) return [0,0];
+  switch(m.wType){
+    case 'projected': return [0,-w*Math.abs(c)];
+    case 'perp': { let nx=-s, ny=c; if(ny>1e-9 || (Math.abs(ny)<=1e-9 && nx<0)){nx=-nx;ny=-ny;} return [w*nx,w*ny]; }
+    case 'horizontal': return [w,0];
+    default: return [0,-w];
+  }
+}
+function analyze(mdl){
+  const nodes=mdl.nodes, mems=mdl.members;
+  if(!mems.length) return {status:'empty'};
+  if(!nodes.some(n=>n.support&&n.support!=='none')) return {status:'nosupport'};
+  const idx=new Map(); nodes.forEach((n,i)=>idx.set(n.id,i));
+  const nn=nodes.length, N=3*nn;
+  const K=[]; for(let i=0;i<N;i++) K.push(new Float64Array(N));
+  const P=[new Float64Array(N), new Float64Array(N)]; // case 0 = self-weight, case 1 = applied loads
+  nodes.forEach((n,i)=>{ P[1][3*i]+=(+n.fx||0); P[1][3*i+1]-=(+n.fy||0); });
+  const rotK=new Uint8Array(nn), ME=[];
+  for(const m of mems){
+    const ia=idx.get(m.a), ib=idx.get(m.b); if(ia==null||ib==null) continue;
+    const A_=nodes[ia], B_=nodes[ib];
+    const dx=(B_.x-A_.x)*12, dy=(B_.y-A_.y)*12, L=Math.hypot(dx,dy); if(L<1e-6) continue;
+    let c=dx/L, s=dy/L; if(Math.abs(c)<1e-12) c=0; if(Math.abs(s)<1e-12) s=0;
+    const p=props(m), EA=p.E*p.A/L, EI=p.E*p.I, L2=L*L, L3=L2*L;
+    const k=[[EA,0,0,-EA,0,0],[0,12*EI/L3,6*EI/L2,0,-12*EI/L3,6*EI/L2],[0,6*EI/L2,4*EI/L,0,-6*EI/L2,2*EI/L],
+             [-EA,0,0,EA,0,0],[0,-12*EI/L3,-6*EI/L2,0,12*EI/L3,-6*EI/L2],[0,6*EI/L2,2*EI/L,0,-6*EI/L2,4*EI/L]];
+    const relS=m.release==='start'||m.release==='both', relE=m.release==='end'||m.release==='both';
+    if(!relS) rotK[ia]=1; if(!relE) rotK[ib]=1;
+    const rel=[]; if(relS) rel.push(2); if(relE) rel.push(5);
+    const ret=[0,1,2,3,4,5].filter(i=>!rel.includes(i));
+    const swq = mdl.selfWeight ? p.A/144*p.dens/12 : 0;
+    const cases=[[0,-swq], udlGlobal(m,c,s)].map(([qx,qy])=>{ const qa=qx*c+qy*s, qt=-qx*s+qy*c;
+      return {qa,qt,f:[-qa*L/2,-qt*L/2,-qt*L2/12,-qa*L/2,-qt*L/2,qt*L2/12]}; });
+    let kc=k, inv=null;
+    if(rel.length){ // static condensation of released end rotations
+      if(rel.length===1) inv=[[1/k[rel[0]][rel[0]]]];
+      else { const a=k[2][2], b=k[2][5], c2=k[5][2], d=k[5][5], det=a*d-b*c2; inv=[[d/det,-b/det],[-c2/det,a/det]]; }
+      kc=[0,1,2,3,4,5].map(()=>new Array(6).fill(0));
+      for(const i of ret) for(const j of ret){ let v=k[i][j]; for(let x=0;x<rel.length;x++) for(let y=0;y<rel.length;y++) v-=k[i][rel[x]]*inv[x][y]*k[rel[y]][j]; kc[i][j]=v; }
+      for(const cs of cases){ const fc=new Array(6).fill(0); for(const i of ret){ let v=cs.f[i]; for(let x=0;x<rel.length;x++) for(let y=0;y<rel.length;y++) v-=k[i][rel[x]]*inv[x][y]*cs.f[rel[y]]; fc[i]=v; } cs.fc=fc; }
+    } else cases.forEach(cs=>cs.fc=cs.f.slice());
+    const dofs=[3*ia,3*ia+1,3*ia+2,3*ib,3*ib+1,3*ib+2];
+    const kg=TtKT(c,s,kc);
+    for(let i=0;i<6;i++) for(let j=0;j<6;j++) K[dofs[i]][dofs[j]]+=kg[i][j];
+    cases.forEach((cs,ci)=>{ const fg=TtV(c,s,cs.fc); for(let i=0;i<6;i++) P[ci][dofs[i]]-=fg[i]; });
+    const Ib=(m.braced!==false)?p.I:p.Imin, Pe=Math.PI*Math.PI*p.Eb*Ib/L2/p.FSb, Pcr=p.Fc*p.A;
+    const cap={T:p.Ft*p.A, C:Math.min(Pe,Pcr), buck:Pe<Pcr, M:p.Fb*p.S, V:p.Fv*p.Av};
+    ME.push({m,id:m.id,ia,ib,L,c,s,p,k,rel,ret,inv,cases,dofs,cap,swq});
+  }
+  const restr=new Uint8Array(N);
+  nodes.forEach((n,i)=>{ const t=n.support;
+    if(t==='pin'){restr[3*i]=restr[3*i+1]=1;} else if(t==='rollerY') restr[3*i+1]=1; else if(t==='rollerX') restr[3*i]=1;
+    else if(t==='fixed'){restr[3*i]=restr[3*i+1]=restr[3*i+2]=1;} });
+  const free=[]; for(let d=0;d<N;d++) if(!restr[d]) free.push(d);
+  let maxT=0,maxR=0; for(let d=0;d<N;d++){ if(d%3===2) maxR=Math.max(maxR,K[d][d]); else maxT=Math.max(maxT,K[d][d]); }
+  const nf=free.length, sc=new Float64Array(nf), dummy=new Uint8Array(nf);
+  for(let i=0;i<nf;i++){ const d=free[i], kd=K[d][d], isR=d%3===2, ref=isR?maxR:maxT;
+    if(kd>1e-10*ref) sc[i]=1/Math.sqrt(kd);
+    else if(isR && !rotK[Math.floor(d/3)]){ dummy[i]=1; sc[i]=1; }
+    else return unstableAt(nodes,d); }
+  const A=[]; for(let i=0;i<nf;i++){ const row=new Float64Array(nf), Ki=K[free[i]]; for(let j=0;j<nf;j++) row[j]=Ki[free[j]]*sc[i]*sc[j]; if(dummy[i]) row[i]=1; A.push(row); }
+  const B=P.map(Pc=>{ const b=new Float64Array(nf); for(let i=0;i<nf;i++) b[i]=Pc[free[i]]*sc[i]; return b; });
+  const sol=solveDense(A,B);
+  if(sol.fail!=null) return unstableAt(nodes,free[sol.fail]);
+  const D=[new Float64Array(N), new Float64Array(N)];
+  for(let ci=0;ci<2;ci++) for(let i=0;i<nf;i++){ const v=sol.x[ci][i]*sc[i]; if(!isFinite(v)||Math.abs(v)>1e8) return unstableAt(nodes,free[i]); D[ci][free[i]]=v; }
+  const R=[new Float64Array(N), new Float64Array(N)];
+  for(let ci=0;ci<2;ci++) for(let d=0;d<N;d++) if(restr[d]){ let v=-P[ci][d]; const Kd=K[d]; for(let j=0;j<N;j++) v+=Kd[j]*D[ci][j]; R[ci][d]=v; }
+  // member internal forces & displaced shape, per load case
+  for(const me of ME){
+    const {L,c,s,k,rel,ret,inv,p}=me, EI=p.E*p.I;
+    me.res=me.cases.map((cs,ci)=>{
+      const dg=me.dofs.map(d=>D[ci][d]);
+      const dl=[c*dg[0]+s*dg[1], -s*dg[0]+c*dg[1], dg[2], c*dg[3]+s*dg[4], -s*dg[3]+c*dg[4], dg[5]];
+      if(rel.length){ const t=rel.map(r=>{ let v=cs.f[r]; for(const j of ret) v+=k[r][j]*dl[j]; return v; });
+        const rv=rel.map((_,x)=>{ let v=0; for(let y=0;y<rel.length;y++) v-=inv[x][y]*t[y]; return v; }); rel.forEach((r,x)=>dl[r]=rv[x]); }
+      const F=[0,1,2,3,4,5].map(i=>{ let v=cs.f[i]; for(let j=0;j<6;j++) v+=k[i][j]*dl[j]; return v; });
+      const Na=new Float64Array(NS+1), Va=new Float64Array(NS+1), Ma=new Float64Array(NS+1), gx=new Float64Array(NS+1), gy=new Float64Array(NS+1), vl=new Float64Array(NS+1);
+      for(let i=0;i<=NS;i++){ const xi=i/NS, x=xi*L;
+        Na[i]=-F[0]-cs.qa*x; Va[i]=F[1]+cs.qt*x; Ma[i]=-F[2]+F[1]*x+cs.qt*x*x/2;
+        const u=dl[0]*(1-xi)+dl[3]*xi;
+        const v=dl[1]*(1-3*xi*xi+2*xi**3)+dl[2]*L*(xi-2*xi*xi+xi**3)+dl[4]*(3*xi*xi-2*xi**3)+dl[5]*L*(-xi*xi+xi**3)+cs.qt*x*x*(L-x)*(L-x)/(24*EI);
+        vl[i]=v; gx[i]=u*c-v*s; gy[i]=u*s+v*c; }
+      return {N:Na,V:Va,M:Ma,gx,gy,vl,F};
+    });
+  }
+  const res={status:'ok', ME, D, R, restr, idx, hasApplied:P[1].some(v=>Math.abs(v)>1e-9)};
+  res.lambda=findLambda(res);
+  const c1=combine(res,1); let ext=0; const xs=nodes.map(n=>n.x), ys=nodes.map(n=>n.y);
+  ext=Math.hypot(Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys))*12;
+  res.autoDef = c1.maxDisp>1e-9 ? 0.06*ext/c1.maxDisp : 1;
+  return res;
+}
+function unstableAt(nodes,d){ const n=nodes[Math.floor(d/3)]; return {status:'unstable', nodeId:n?n.id:null, dir:['sideways','up/down','by spinning'][d%3]}; }
+function TtKT(c,s,k){ // T^T k T with T = blockdiag(R,R), R=[[c,s,0],[-s,c,0],[0,0,1]]
+  const T=[[c,s,0,0,0,0],[-s,c,0,0,0,0],[0,0,1,0,0,0],[0,0,0,c,s,0],[0,0,0,-s,c,0],[0,0,0,0,0,1]];
+  const kt=[]; for(let i=0;i<6;i++){ kt.push([]); for(let j=0;j<6;j++){ let v=0; for(let m=0;m<6;m++) v+=k[i][m]*T[m][j]; kt[i].push(v);} }
+  const out=[]; for(let i=0;i<6;i++){ out.push([]); for(let j=0;j<6;j++){ let v=0; for(let m=0;m<6;m++) v+=T[m][i]*kt[m][j]; out[i].push(v);} }
+  return out;
+}
+function TtV(c,s,f){ return [c*f[0]-s*f[1], s*f[0]+c*f[1], f[2], c*f[3]-s*f[4], s*f[3]+c*f[4], f[5]]; }
+function solveDense(A,Bs){
+  const n=A.length;
+  for(let k=0;k<n;k++){
+    let p=k, pv=Math.abs(A[k][k]);
+    for(let i=k+1;i<n;i++){ const v=Math.abs(A[i][k]); if(v>pv){pv=v;p=i;} }
+    if(pv<1e-9) return {fail:k};
+    if(p!==k){ const t=A[k]; A[k]=A[p]; A[p]=t; for(const b of Bs){ const tb=b[k]; b[k]=b[p]; b[p]=tb; } }
+    const Ak=A[k], piv=Ak[k];
+    for(let i=k+1;i<n;i++){ const Ai=A[i], f=Ai[k]/piv; if(f===0) continue; for(let j=k;j<n;j++) Ai[j]-=f*Ak[j]; for(const b of Bs) b[i]-=f*b[k]; }
+  }
+  for(const b of Bs) for(let i=n-1;i>=0;i--){ let v=b[i]; const Ai=A[i]; for(let j=i+1;j<n;j++) v-=Ai[j]*b[j]; b[i]=v/Ai[i]; }
+  return {x:Bs};
+}
+function utilParts(cap,N,V,M){
+  const ax = N>=0 ? N/cap.T : -N/cap.C, b=Math.abs(M)/cap.M, sh=Math.abs(V)/cap.V;
+  return {ax,b,sh,u:Math.max(ax+b,sh)};
+}
+function maxUtilAt(res,lam){
+  let best=0, who=null;
+  for(const me of res.ME){ const [a,b]=me.res;
+    for(let i=0;i<=NS;i++){ const u=utilParts(me.cap, a.N[i]+lam*b.N[i], a.V[i]+lam*b.V[i], a.M[i]+lam*b.M[i]).u; if(u>best){best=u;who=me.id;} } }
+  return {u:best, who};
+}
+function findLambda(res){
+  const u0=maxUtilAt(res,0);
+  if(u0.u>=1) return {lam:0, who:u0.who};
+  if(!res.hasApplied) return {lam:Infinity};
+  let lo=0, hi=1; while(maxUtilAt(res,hi).u<1){ lo=hi; hi*=2; if(hi>1e7) return {lam:Infinity}; }
+  for(let i=0;i<50;i++){ const mid=(lo+hi)/2; if(maxUtilAt(res,mid).u<1) lo=mid; else hi=mid; }
+  return {lam:hi, who:maxUtilAt(res,hi*1.0000001).who};
+}
+function combine(res,lam){
+  const out={mem:{}, maxU:0, maxWho:null, fails:0, maxDisp:0, maxDispAt:null, lam};
+  for(const me of res.ME){ const [a,b]=me.res;
+    const C={N:new Float64Array(NS+1),V:new Float64Array(NS+1),M:new Float64Array(NS+1),gx:new Float64Array(NS+1),gy:new Float64Array(NS+1),u:new Float64Array(NS+1), vl:new Float64Array(NS+1)};
+    let mu=0, at=0, parts=null, mN=0, mV=0, mM=0, mNi=0, mMi=0;
+    for(let i=0;i<=NS;i++){
+      const N=a.N[i]+lam*b.N[i], V=a.V[i]+lam*b.V[i], M=a.M[i]+lam*b.M[i];
+      C.N[i]=N; C.V[i]=V; C.M[i]=M; C.gx[i]=a.gx[i]+lam*b.gx[i]; C.gy[i]=a.gy[i]+lam*b.gy[i]; C.vl[i]=a.vl[i]+lam*b.vl[i];
+      const up=utilParts(me.cap,N,V,M); C.u[i]=up.u;
+      if(up.u>mu||!parts){ mu=up.u; at=i; parts=up; }
+      if(Math.abs(N)>Math.abs(mN)){mN=N;mNi=i;} if(Math.abs(V)>Math.abs(mV)) mV=V; if(Math.abs(M)>Math.abs(mM)){mM=M;mMi=i;}
+      const dd=Math.hypot(C.gx[i],C.gy[i]); if(dd>out.maxDisp){ out.maxDisp=dd; out.maxDispAt={mem:me.id, i}; }
+    }
+    let rel=0; for(let i=0;i<=NS;i++){ const xi=i/NS; rel=Math.max(rel,Math.abs(C.vl[i]-(C.vl[0]+(C.vl[NS]-C.vl[0])*xi))); }
+    let gov;
+    if(parts.sh>=parts.ax+parts.b) gov='Shear';
+    else if(parts.ax<0.1*parts.b) gov='Bending';
+    else if(parts.b<0.1*parts.ax) gov = C.N[at]>=0?'Tension (pull)':(me.cap.buck?'Buckling (push)':'Compression (push)');
+    else gov = 'Bending + '+(C.N[at]>=0?'tension':(me.cap.buck?'buckling':'compression'));
+    C.maxU=mu; C.at=at; C.parts=parts; C.gov=gov; C.mN=mN; C.mV=mV; C.mM=mM; C.mMi=mMi; C.rel=rel;
+    out.mem[me.id]=C;
+    if(mu>out.maxU){ out.maxU=mu; out.maxWho=me.id; }
+    if(mu>1+1e-9) out.fails++;
+  }
+  out.R=res.R[0].map((v,d)=>v+lam*res.R[1][d]);
+  out.D=res.D[0].map((v,d)=>v+lam*res.D[1][d]);
+  return out;
+}
+
+/* =====================================================================
+   APP STATE
+   ===================================================================== */
+const svg=document.getElementById('cv');
+const state={
+  tool:'select', sel:null, pending:null, hover:null, cursor:null, snap:null, shift:false,
+  view:{sc:40, ox:120, oy:420}, drag:null, mult:1, defMode:'auto', flash:null,
+  show:{stress:true, deformed:true, values:true, reactions:true, moment:false, shear:false, axial:false, loads:true},
+  opts:{section:DEFAULT_SECTION, release:'none', support:'pin', pfy:1000, pfx:0, w:100, wType:'gravity'},
+  grid:1, res:null, combo:null, comboKey:null
+};
+const hist={undo:[],redo:[]};
+function checkpoint(){ hist.undo.push(JSON.stringify(model)); if(hist.undo.length>300) hist.undo.shift(); hist.redo.length=0; updUndo(); }
+function updUndo(){ document.getElementById('undo').disabled=!hist.undo.length; document.getElementById('redo').disabled=!hist.redo.length; }
+function undo(){ if(!hist.undo.length) return; hist.redo.push(JSON.stringify(model)); model=JSON.parse(hist.undo.pop()); afterLoad(); }
+function redo(){ if(!hist.redo.length) return; hist.undo.push(JSON.stringify(model)); model=JSON.parse(hist.redo.pop()); afterLoad(); }
+function afterLoad(){ stopAnim(); if(state.sel && !(state.sel.type==='node'?nodeById(state.sel.id):memberById(state.sel.id))) state.sel=null; state.pending=null; document.getElementById('selfw').checked=model.selfWeight!==false; updUndo(); changed(); }
+
+let saveTimer=null;
+function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ try{ localStorage.setItem('loadcalc.v1', JSON.stringify({model, opts:state.opts, show:state.show})); }catch(e){} },300); }
+function update(){
+  state.res=analyze(model); state.comboKey=null;
+  const sl=document.getElementById('mult'); const lam=state.res.lambda?state.res.lambda.lam:Infinity;
+  const mx=Math.max(3, isFinite(lam)?Math.min(50,Math.ceil(lam*1.3)):3);
+  if(+sl.max!==mx) sl.max=mx;
+  renderStatus(); renderSelRes(); schedule(); save();
+}
+function changed(){ update(); renderSel(); renderOpts(); }
+function getCombo(){ const r=state.res; if(!r||r.status!=='ok') return null; const key=state.mult; if(state.comboKey!==key){ state.combo=combine(r,state.mult); state.comboKey=key; } return state.combo; }
+
+/* =====================================================================
+   VIEW TRANSFORMS & HIT TESTS
+   ===================================================================== */
+const w2s=(x,y)=>[state.view.ox+x*state.view.sc, state.view.oy-y*state.view.sc];
+const s2w=(sx,sy)=>({x:(sx-state.view.ox)/state.view.sc, y:(state.view.oy-sy)/state.view.sc});
+function hitNode(sx,sy,exclude){ let best=null,bd=11; for(const n of model.nodes){ if(n.id===exclude) continue; const [x,y]=w2s(n.x,n.y), d=Math.hypot(x-sx,y-sy); if(d<bd){bd=d;best=n;} } return best; }
+function hitMember(sx,sy){ let best=null,bd=9; const p={x:sx,y:sy};
+  for(const m of model.members){ const a=nodeById(m.a), b=nodeById(m.b); const [ax,ay]=w2s(a.x,a.y), [bx,by]=w2s(b.x,b.y); const d=segDist(p,{x:ax,y:ay},{x:bx,y:by}); if(d<bd){bd=d;best=m;} } return best; }
+function snapAt(sx,sy,{exclude=null, members=true, free=false}={}){
+  const n=hitNode(sx,sy,exclude); if(n) return {x:n.x,y:n.y,kind:'node',nodeId:n.id};
+  const w=s2w(sx,sy);
+  if(members){ const m=hitMember(sx,sy);
+    if(m && m.a!==exclude && m.b!==exclude){ const a=nodeById(m.a), b=nodeById(m.b), L=Math.hypot(b.x-a.x,b.y-a.y);
+      let t=Math.max(0,Math.min(1,projT(w,a,b)));
+      if(!free){ if(Math.abs(t-0.5)*L*state.view.sc<12) t=0.5; else { const g=state.grid/2; t=Math.round(t*L/g)*g/L; } }
+      if(t<=1e-6) return {x:a.x,y:a.y,kind:'node',nodeId:a.id}; if(t>=1-1e-6) return {x:b.x,y:b.y,kind:'node',nodeId:b.id};
+      return {x:a.x+t*(b.x-a.x), y:a.y+t*(b.y-a.y), kind:'member', memberId:m.id}; } }
+  if(free) return {x:r6(w.x),y:r6(w.y),kind:'free'};
+  const g=state.grid; return {x:r6(Math.round(w.x/g)*g), y:r6(Math.round(w.y/g)*g), kind:'grid'};
+}
+function fit(){
+  const W=svg.clientWidth, H=svg.clientHeight;
+  if(!model.nodes.length){ state.view.sc=40; state.view.ox=Math.min(140,W*0.15); state.view.oy=H*0.72; schedule(); return; }
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity; for(const n of model.nodes){x0=Math.min(x0,n.x);x1=Math.max(x1,n.x);y0=Math.min(y0,n.y);y1=Math.max(y1,n.y);}
+  const padX=Math.min(130,W*0.16), padTop=Math.min(110,H*0.2), padBot=Math.min(130,H*0.22);
+  const sc=Math.max(4,Math.min(160, Math.min((W-2*padX)/Math.max(x1-x0,1), (H-padTop-padBot)/Math.max(y1-y0,1))));
+  state.view.sc=sc; state.view.ox=W/2-(x0+x1)/2*sc; state.view.oy=padTop+(H-padTop-padBot)/2+(y0+y1)/2*sc; schedule();
+}
+function zoomAt(sx,sy,f){ const v=state.view, ns=Math.max(3,Math.min(600,v.sc*f)); const w=s2w(sx,sy); v.sc=ns; v.ox=sx-w.x*ns; v.oy=sy+w.y*ns; schedule(); }
+
+/* =====================================================================
+   RENDERING
+   ===================================================================== */
+let rafId=0; function schedule(){ if(!rafId) rafId=requestAnimationFrame(render); }
+function utilColor(u){ if(u>1+1e-9) return '#7f1d1d'; const h=130*(1-Math.max(0,u)); return `hsl(${h.toFixed(0)},${u>0.55?88:72}%,${u>0.4&&u<0.75?44:41}%)`; }
+const COL={mem:'#334155', load:'#7c3aed', react:'#0e7490', node:'#0f172a', sel:'#2563eb'};
+function arrowDefs(){ return `<defs>${[['ah-load',COL.load],['ah-react',COL.react],['ah-sel',COL.sel]].map(([id,c])=>`<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${c}"/></marker>`).join('')}
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#64748b" stroke-width="1.5"/></pattern></defs>`; }
+function render(){
+  rafId=0;
+  const W=svg.clientWidth, H=svg.clientHeight; svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  const o=[arrowDefs()];
+  drawGrid(o,W,H);
+  const res=state.res, combo=getCombo(), sh=state.show;
+  const defF = combo&&sh.deformed ? (state.defMode==='auto'?res.autoDef:+state.defMode) : 0;
+  const memPts = m=>{ const a=nodeById(m.a), b=nodeById(m.b), C=combo&&combo.mem[m.id]; const pts=[];
+    for(let i=0;i<=NS;i++){ const t=i/NS; let x=a.x+t*(b.x-a.x), y=a.y+t*(b.y-a.y); if(C&&defF){ x+=C.gx[i]*defF/12; y+=C.gy[i]*defF/12; } pts.push(w2s(x,y)); } return pts; };
+  // --- members
+  const labels=[];
+  for(const m of model.members){
+    const a=nodeById(m.a), b=nodeById(m.b); if(!a||!b) continue;
+    const [ax,ay]=w2s(a.x,a.y), [bx,by]=w2s(b.x,b.y);
+    const selected=state.sel&&state.sel.type==='member'&&state.sel.id===m.id, hov=state.hover&&state.hover.type==='member'&&state.hover.id===m.id;
+    if(selected) o.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#60a5fa" stroke-width="16" stroke-linecap="round" opacity=".45"/>`);
+    else if(hov) o.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#93c5fd" stroke-width="14" stroke-linecap="round" opacity=".45"/>`);
+    const C=combo&&combo.mem[m.id];
+    if(C){
+      const pts=memPts(m);
+      if(defF) o.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 4"/>`);
+      const poly=pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+      if(C.maxU>1+1e-9) o.push(`<polyline points="${poly}" fill="none" stroke="#ef4444" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" class="pulse"/>`);
+      if(state.flash===m.id) o.push(`<polyline points="${poly}" fill="none" stroke="#f59e0b" stroke-width="22" stroke-linecap="round" class="flash" opacity=".7"/>`);
+      if(sh.stress){ for(let i=0;i<NS;i++) o.push(`<line x1="${pts[i][0].toFixed(1)}" y1="${pts[i][1].toFixed(1)}" x2="${pts[i+1][0].toFixed(1)}" y2="${pts[i+1][1].toFixed(1)}" stroke="${utilColor(Math.max(C.u[i],C.u[i+1]))}" stroke-width="7" stroke-linecap="round"/>`); }
+      else o.push(`<polyline points="${poly}" fill="none" stroke="${COL.mem}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>`);
+      if(C.maxU>1+1e-9){ const p=pts[C.at]; o.push(`<g transform="translate(${p[0]},${p[1]})"><circle r="9" fill="#fff" stroke="#b91c1c" stroke-width="2.5"/><path d="M-4 -4 L4 4 M4 -4 L-4 4" stroke="#b91c1c" stroke-width="2.6" stroke-linecap="round"/></g>`); }
+      if(sh.values){ const mid=pts[NS/2]; labels.push({x:mid[0],y:mid[1],dx:bx-ax,dy:by-ay,u:C.maxU,id:m.id}); }
+    } else {
+      o.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${COL.mem}" stroke-width="6" stroke-linecap="round"/>`);
+    }
+    // pinned-end markers
+    const L=Math.hypot(bx-ax,by-ay)||1, ux=(bx-ax)/L, uy=(by-ay)/L, off=Math.min(13,L/3);
+    if(m.release==='start'||m.release==='both') o.push(`<circle cx="${ax+ux*off}" cy="${ay+uy*off}" r="4" fill="#fff" stroke="${COL.mem}" stroke-width="2"/>`);
+    if(m.release==='end'||m.release==='both') o.push(`<circle cx="${bx-ux*off}" cy="${by-uy*off}" r="4" fill="#fff" stroke="${COL.mem}" stroke-width="2"/>`);
+  }
+  // --- diagrams
+  if(combo){ for(const [key,on,color,neg] of [['M',sh.moment,'#8b5cf6'],['V',sh.shear,'#0284c7'],['N',sh.axial,null]]){ if(on) drawDiagram(o,combo,key,color); } }
+  // --- loads
+  if(sh.loads){ for(const m of model.members) if(+m.w) drawUDL(o,m); for(const n of model.nodes) if(+n.fx||+n.fy) drawPointLoad(o,n); }
+  // --- supports & reactions
+  for(const n of model.nodes) if(n.support&&n.support!=='none') drawSupport(o,n);
+  if(combo&&sh.reactions) drawReactions(o,combo);
+  // --- nodes
+  for(const n of model.nodes){ const [x,y]=w2s(n.x,n.y);
+    const selected=state.sel&&state.sel.type==='node'&&state.sel.id===n.id, hov=state.hover&&state.hover.type==='node'&&state.hover.id===n.id;
+    if(selected||hov) o.push(`<circle cx="${x}" cy="${y}" r="11" fill="${selected?'#60a5fa':'#93c5fd'}" opacity=".5"/>`);
+    o.push(`<circle cx="${x}" cy="${y}" r="5" fill="${selected?COL.sel:'#fff'}" stroke="${COL.node}" stroke-width="2"/>`); }
+  // --- unstable highlight
+  if(res&&res.status==='unstable'&&res.nodeId!=null){ const n=nodeById(res.nodeId); if(n){ const [x,y]=w2s(n.x,n.y); o.push(`<circle cx="${x}" cy="${y}" r="18" fill="none" stroke="#f59e0b" stroke-width="4" class="pulse" style="opacity:.8"/><text x="${x+22}" y="${y-14}" font-size="12" font-weight="700" fill="#b45309">loose: moves ${res.dir}</text>`);} }
+  // --- labels
+  for(const l of labels){ let nx=-l.dy, ny=l.dx; const len=Math.hypot(nx,ny)||1; nx/=len; ny/=len; if(ny>0){nx=-nx;ny=-ny;}
+    const fail=l.u>1+1e-9, txt=(fail?'FAIL ':'')+fmt(l.u*100)+'%', w=txt.length*6.6+12, x=l.x+nx*20, y=l.y+ny*20;
+    o.push(`<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})"><rect x="${-w/2}" y="-10" width="${w}" height="20" rx="10" fill="${fail?'#b91c1c':'#fff'}" stroke="${fail?'#7f1d1d':utilColor(l.u)}" stroke-width="1.5"/><text text-anchor="middle" y="4" font-size="11.5" font-weight="800" fill="${fail?'#fff':'#0f172a'}">${txt}</text></g>`); }
+  // --- drawing preview
+  if(state.tool==='member'&&state.pending&&state.snap){ const p=state.pending, q=state.snap; const [x1,y1]=w2s(p.x,p.y), [x2,y2]=w2s(q.x,q.y);
+    const L=Math.hypot(q.x-p.x,q.y-p.y), ang=Math.atan2(q.y-p.y,q.x-p.x)*180/Math.PI;
+    o.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${COL.sel}" stroke-width="5" stroke-dasharray="9 6" stroke-linecap="round" opacity=".8"/><circle cx="${x1}" cy="${y1}" r="6" fill="${COL.sel}"/>`);
+    if(L>0){ const t=`${fmt(L,2)} ft · ${fmt(Math.abs(ang)>90?180-Math.abs(ang):Math.abs(ang),1)}°`; o.push(`<g transform="translate(${(x1+x2)/2},${(y1+y2)/2-16})"><rect x="${-t.length*3.4-8}" y="-11" width="${t.length*6.8+16}" height="22" rx="6" fill="#1e3a8a"/><text text-anchor="middle" y="4" fill="#fff" font-size="12" font-weight="700">${t}</text></g>`); } }
+  if(state.snap&&state.cursor&&['member','support','point'].includes(state.tool)){ const [x,y]=w2s(state.snap.x,state.snap.y); const k=state.snap.kind;
+    o.push(k==='node'?`<circle cx="${x}" cy="${y}" r="9" fill="none" stroke="${COL.sel}" stroke-width="2.5"/>`: k==='member'?`<rect x="${x-6}" y="${y-6}" width="12" height="12" fill="none" stroke="${COL.sel}" stroke-width="2.5" transform="rotate(45 ${x} ${y})"/>`:`<path d="M${x-7} ${y} H${x+7} M${x} ${y-7} V${y+7}" stroke="${COL.sel}" stroke-width="2"/>`); }
+  svg.innerHTML=o.join('');
+  updateTip();
+}
+function drawGrid(o,W,H){
+  const sc=state.view.sc; let step=state.grid; while(step*sc<14) step*= (String(step).startsWith('2')?2.5:2);
+  const major=step*5; const w0=s2w(0,H), w1=s2w(W,0);
+  const lines=[], majors=[], lbl=[];
+  for(let x=Math.floor(w0.x/step)*step; x<=w1.x; x+=step){ const sx=w2s(x,0)[0].toFixed(1); const isMaj=Math.abs(x/major-Math.round(x/major))<1e-6; (isMaj?majors:lines).push(`M${sx} 0V${H}`); if(isMaj) lbl.push(`<text x="${+sx+3}" y="${H-4}" font-size="10" fill="#94a3b8">${fmt(x,Math.abs(x%1)>1e-9?1:0)}′</text>`); }
+  for(let y=Math.floor(w0.y/step)*step; y<=w1.y; y+=step){ const sy=w2s(0,y)[1].toFixed(1); const isMaj=Math.abs(y/major-Math.round(y/major))<1e-6; (isMaj?majors:lines).push(`M0 ${sy}H${W}`); if(isMaj) lbl.push(`<text x="4" y="${+sy-3}" font-size="10" fill="#94a3b8">${fmt(y,Math.abs(y%1)>1e-9?1:0)}′</text>`); }
+  o.push(`<path d="${lines.join('')}" stroke="#e2e8f0" stroke-width="1"/><path d="${majors.join('')}" stroke="#cbd5e1" stroke-width="1"/>`);
+  const [gx,gy]=w2s(0,0); o.push(`<path d="M0 ${gy}H${W}" stroke="#a8b4c6" stroke-width="1.3"/>`);
+  o.push(lbl.join(''));
+}
+function drawDiagram(o,combo,key,color){
+  let mx=0; for(const id in combo.mem){ const a=combo.mem[id][key]; for(let i=0;i<=NS;i++) mx=Math.max(mx,Math.abs(a[i])); }
+  if(mx<1e-6) return; const k=48/mx;
+  for(const m of model.members){ const C=combo.mem[m.id]; if(!C) continue; const a=nodeById(m.a), b=nodeById(m.b);
+    const [ax,ay]=w2s(a.x,a.y), [bx,by]=w2s(b.x,b.y), L=Math.hypot(bx-ax,by-ay)||1;
+    // screen unit vector of local +y
+    const nx=(ay-by)/L, ny=-(bx-ax)/L; const sgn = key==='M'?-1:1;
+    const arr=C[key]; const base=[], top=[];
+    for(let i=0;i<=NS;i++){ const t=i/NS, x=ax+t*(bx-ax), y=ay+t*(by-ay), v=arr[i]*k*sgn; base.push([x,y]); top.push([x+nx*v, y+ny*v]); }
+    let col=color; if(key==='N'){ const avg=arr.reduce((s,v)=>s+v,0)/arr.length; col=avg>=0?'#ea580c':'#2563eb'; }
+    const d='M'+base[0].join(',')+top.map(p=>' L'+p[0].toFixed(1)+','+p[1].toFixed(1)).join('')+' L'+base[NS].join(',')+' Z';
+    o.push(`<path d="${d}" fill="${col}" fill-opacity=".18" stroke="${col}" stroke-width="1.6"/>`);
+    let mi=0; for(let i=0;i<=NS;i++) if(Math.abs(arr[i])>Math.abs(arr[mi])) mi=i;
+    if(Math.abs(arr[mi])>0.06*mx && state.show.values){ const p=top[mi], v=arr[mi];
+      const txt = key==='M'? fmtSmart(v/12)+' lb·ft' : key==='V'? fmtSmart(Math.abs(v))+' lb' : fmtSmart(Math.abs(v))+' lb '+(v>=0?'pull':'push');
+      const ox=(p[0]-base[mi][0]), oy=(p[1]-base[mi][1]), ol=Math.hypot(ox,oy)||1;
+      o.push(`<text x="${(p[0]+ox/ol*12).toFixed(1)}" y="${(p[1]+oy/ol*12+4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${col}" stroke="#fff" stroke-width="3" paint-order="stroke">${txt}</text>`); }
+  }
+}
+function arrow(o,x1,y1,x2,y2,marker,color,w=2.2){ o.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}" stroke-width="${w}" marker-end="url(#${marker})"/>`); }
+function drawUDL(o,m){
+  const a=nodeById(m.a), b=nodeById(m.b), dx=(b.x-a.x), dy=(b.y-a.y), L=Math.hypot(dx,dy); if(!L) return;
+  let [qx,qy]=udlGlobal(m,dx/L,dy/L); const ql=Math.hypot(qx,qy); if(!ql) return; qx/=ql; qy/=ql;
+  const sdx=qx, sdy=-qy; // screen direction of load
+  const [ax,ay]=w2s(a.x,a.y), [bx,by]=w2s(b.x,b.y), Ls=Math.hypot(bx-ax,by-ay);
+  const n=Math.max(2,Math.round(Ls/26)), len=26, gap=5, tails=[];
+  for(let i=0;i<=n;i++){ const t=i/n, x=ax+t*(bx-ax), y=ay+t*(by-ay); const tx=x-sdx*(len+gap), ty=y-sdy*(len+gap); tails.push([tx,ty]); arrow(o,tx,ty,x-sdx*gap,y-sdy*gap,'ah-load',COL.load,1.6); }
+  o.push(`<polyline points="${tails.map(p=>p.map(v=>v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${COL.load}" stroke-width="2"/>`);
+  const mid=tails[Math.floor(n/2)]; const tag={gravity:'',projected:' (horiz. proj.)',perp:' ⟂',horizontal:' →'}[m.wType]||'';
+  o.push(`<text x="${(mid[0]-sdx*12).toFixed(1)}" y="${(mid[1]-sdy*12+4).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="700" fill="${COL.load}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtSmart(+m.w)} lb/ft${tag}</text>`);
+}
+function drawPointLoad(o,n){
+  const fx=+n.fx||0, fy=+n.fy||0, mag=Math.hypot(fx,fy); if(!mag) return;
+  const dx=fx/mag, dy=fy/mag; const [x,y]=w2s(n.x,n.y); const len=54, gap=7;
+  arrow(o,x-dx*(len+gap),y-dy*(len+gap),x-dx*gap,y-dy*gap,'ah-load',COL.load,3);
+  o.push(`<text x="${(x-dx*(len+gap+12)).toFixed(1)}" y="${(y-dy*(len+gap+12)+4).toFixed(1)}" text-anchor="middle" font-size="12.5" font-weight="800" fill="${COL.load}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtSmart(mag)} lb</text>`);
+}
+function drawSupport(o,n){
+  const [x,y]=w2s(n.x,n.y), t=n.support, st=`stroke="#334155" stroke-width="2" stroke-linejoin="round"`;
+  if(t==='pin'){ o.push(`<path d="M${x} ${y} L${x+13} ${y+20} L${x-13} ${y+20} Z" fill="#cbd5e1" ${st}/><rect x="${x-19}" y="${y+20}" width="38" height="7" fill="url(#hatch)"/><path d="M${x-19} ${y+20}H${x+19}" ${st}/>`); }
+  else if(t==='rollerY'){ o.push(`<path d="M${x} ${y} L${x+13} ${y+17} L${x-13} ${y+17} Z" fill="#e2e8f0" ${st}/><circle cx="${x-7}" cy="${y+21.5}" r="3.5" fill="#fff" ${st}/><circle cx="${x+7}" cy="${y+21.5}" r="3.5" fill="#fff" ${st}/><rect x="${x-19}" y="${y+25}" width="38" height="7" fill="url(#hatch)"/><path d="M${x-19} ${y+25}H${x+19}" ${st}/>`); }
+  else if(t==='rollerX'){ o.push(`<path d="M${x} ${y} L${x-17} ${y-13} L${x-17} ${y+13} Z" fill="#e2e8f0" ${st}/><circle cx="${x-21.5}" cy="${y-7}" r="3.5" fill="#fff" ${st}/><circle cx="${x-21.5}" cy="${y+7}" r="3.5" fill="#fff" ${st}/><rect x="${x-32}" y="${y-19}" width="7" height="38" fill="url(#hatch)"/><path d="M${x-25} ${y-19}V${y+19}" ${st}/>`); }
+  else if(t==='fixed'){ o.push(`<rect x="${x-20}" y="${y+4}" width="40" height="11" fill="url(#hatch)"/><path d="M${x-20} ${y+4}H${x+20}" stroke="#334155" stroke-width="3.5"/><path d="M${x} ${y}V${y+4}" stroke="#334155" stroke-width="5"/>`); }
+}
+function drawReactions(o,combo){
+  for(const n of model.nodes){ if(!n.support||n.support==='none') continue; const i=state.res.idx.get(n.id); if(i==null) continue;
+    const [x,y]=w2s(n.x,n.y), Rx=combo.R[3*i], Ry=combo.R[3*i+1], Mz=combo.R[3*i+2];
+    const yb = n.support==='fixed'?y+18:n.support==='rollerY'?y+34:y+29;
+    if(Math.abs(Ry)>0.5){ const up=Ry>0, y1=up?yb+40:yb+4, y2=up?yb+4:yb+40; arrow(o,x,y1,x,y2,'ah-react',COL.react,3);
+      o.push(`<text x="${x}" y="${yb+56}" text-anchor="middle" font-size="12" font-weight="800" fill="${COL.react}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtSmart(Math.abs(Ry))} lb ${up?'↑':'↓'}</text>`); }
+    if(Math.abs(Rx)>0.5){ const xb=n.support==='rollerX'?x-34:x-22, right=Rx>0, x1=right?xb-42:xb-4, x2=right?xb-4:xb-42, yy=n.support==='rollerX'?y:y+12;
+      arrow(o,x1,yy,x2,yy,'ah-react',COL.react,3);
+      o.push(`<text x="${xb-48}" y="${yy+4}" text-anchor="end" font-size="12" font-weight="800" fill="${COL.react}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtSmart(Math.abs(Rx))} lb ${right?'→':'←'}</text>`); }
+    if(n.support==='fixed'&&Math.abs(Mz)>6){ const ccw=Mz>0, r=24;
+      o.push(`<path d="M${x+r} ${y} A${r} ${r} 0 1 ${ccw?0:1} ${x} ${y-r}" fill="none" stroke="${COL.react}" stroke-width="2.4" marker-end="url(#ah-react)"/><text x="${x+r+6}" y="${y-r+4}" font-size="12" font-weight="800" fill="${COL.react}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtSmart(Math.abs(Mz)/12)} lb·ft ${ccw?'⟲':'⟳'}</text>`); }
+  }
+}
+
+/* =====================================================================
+   TOOLTIP / HINTS / TOOL OPTIONS
+   ===================================================================== */
+const tip=document.getElementById('tip');
+function updateTip(){
+  const h=state.hover, c=getCombo();
+  if(!h||!state.cursor||state.drag){ tip.style.display='none'; return; }
+  let html='';
+  if(h.type==='member'){ const m=memberById(h.id); if(!m){tip.style.display='none';return;} const p=props(m), a=nodeById(m.a), b=nodeById(m.b);
+    html=`<b>${memName(m)}</b> · ${esc(p.label)} · ${fmt(Math.hypot(b.x-a.x,b.y-a.y),2)} ft`;
+    if(c&&c.mem[m.id]){ const C=c.mem[m.id]; html+=`<br><span style="color:${C.maxU>1?'#fca5a5':'#86efac'}">${C.maxU>1?'FAILS':'OK'} — ${fmt(C.maxU*100)}% of capacity</span> (${C.gov.toLowerCase()})`; } }
+  else { const n=nodeById(h.id); if(!n){tip.style.display='none';return;} html=`<b>Joint ${nodeName(n)}</b> (${fmt(n.x,2)}, ${fmt(n.y,2)}) ft`; if(n.support!=='none') html+=` · ${supportName(n.support)}`; }
+  tip.innerHTML=html; tip.style.display='block';
+  const W=svg.clientWidth; let x=state.cursor.x+16, y=state.cursor.y+18; if(x+tip.offsetWidth>W-8) x=state.cursor.x-tip.offsetWidth-12; tip.style.left=x+'px'; tip.style.top=y+'px';
+}
+const supportName=t=>({pin:'Pin support',rollerY:'Roller (holds up/down)',rollerX:'Side roller (holds sideways)',fixed:'Fixed support',none:'No support'})[t]||t;
+function renderHint(){
+  const t=state.tool, h=document.getElementById('hint');
+  h.textContent = {
+    select:'Click a member or joint to edit it · drag joints to reshape · drag empty space to pan · scroll/pinch to zoom',
+    member: state.pending?'Click to place the end · keep clicking to chain members · Esc or right-click to stop':'Click (or drag) to start a member — snaps to the grid, joints and other members',
+    support:'Click a joint (or anywhere on a member) to place the selected support · click again to remove it',
+    point:'Click a joint or anywhere on a member to put a point load there',
+    udl:'Click a member to spread a load along it (pounds per foot)',
+    delete:'Click a member or joint to delete it'
+  }[t];
+}
+function sectionOptions(sel){
+  let h=''; for(const g of SECTION_GROUPS){ h+=`<optgroup label="${esc(g.label)}">`+g.ids.map(id=>`<option value="${id}"${id===sel?' selected':''}>${esc(SECTIONS[id].name)}</option>`).join('')+'</optgroup>'; }
+  return h+`<optgroup label="Other"><option value="custom"${sel==='custom'?' selected':''}>Custom rectangle…</option></optgroup>`;
+}
+const RELEASES=[['none','Rigid (continuous)'],['both','Pinned both ends (truss)'],['start','Pinned at start only'],['end','Pinned at end only']];
+const WTYPES=[['gravity','Straight down (weight)'],['projected','Down, per horizontal ft (snow)'],['perp','Perpendicular to member (wind)'],['horizontal','Sideways → (wind on wall)']];
+const SUPPORTS=[['pin','Pin','<path d="M9 3 L15 13 H3 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M1 16 H17" stroke="currentColor" stroke-width="1.8"/>'],
+  ['rollerY','Roller','<path d="M9 2 L14 10 H4 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="6" cy="13" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="13" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1 16.5 H17" stroke="currentColor" stroke-width="1.8"/>'],
+  ['rollerX','Side roller','<path d="M14 9 L6 4 V14 Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="3.5" cy="6" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="3.5" cy="12" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/>'],
+  ['fixed','Fixed','<path d="M9 2 V10" stroke="currentColor" stroke-width="2.4"/><path d="M2 10 H16" stroke="currentColor" stroke-width="2.4"/><path d="M4 13 L6 10 M8 13 L10 10 M12 13 L14 10" stroke="currentColor" stroke-width="1.4"/>']];
+function renderOpts(){
+  const t=state.tool, O=state.opts, el=document.getElementById('opts'); let h='';
+  if(t==='member') h=`<div class="box"><span class="ttl">New members:</span><label>Size <select data-o="section">${sectionOptions(O.section)}</select></label><label>Joints <select data-o="release">${RELEASES.map(([v,l])=>`<option value="${v}"${O.release===v?' selected':''}>${l}</option>`).join('')}</select></label><label>Grid <select data-grid>${[[0.25,'3 in'],[0.5,'6 in'],[1,'1 ft'],[2,'2 ft']].map(([v,l])=>`<option value="${v}"${state.grid===v?' selected':''}>${l}</option>`).join('')}</select></label></div>`;
+  else if(t==='support') h=`<div class="box"><span class="ttl">Support type:</span><div class="seg">${SUPPORTS.map(([v,l,ic])=>`<button data-sup="${v}" class="${O.support===v?'on':''}"><svg width="18" height="18" viewBox="0 0 18 18">${ic}</svg>${l}</button>`).join('')}</div></div>`;
+  else if(t==='point') h=`<div class="box"><span class="ttl">Point load:</span><label>Down <input type="number" data-o="pfy" value="${O.pfy}" step="100"> lb</label><label>Sideways → <input type="number" data-o="pfx" value="${O.pfx}" step="100"> lb</label></div>`;
+  else if(t==='udl') h=`<div class="box"><span class="ttl">Spread load:</span><label><input type="number" data-o="w" value="${O.w}" step="10"> lb/ft</label><label>Direction <select data-o="wType">${WTYPES.map(([v,l])=>`<option value="${v}"${O.wType===v?' selected':''}>${l}</option>`).join('')}</select></label><span class="muted" title="Load per foot = pressure (psf) × spacing (ft). Example: 40 psf roof at 24 in spacing = 80 lb/ft">psf × spacing = lb/ft ⓘ</span></div>`;
+  el.innerHTML=h; renderHint();
+}
+document.getElementById('opts').addEventListener('change',e=>{
+  const k=e.target.dataset.o; if(k){ state.opts[k]= e.target.type==='number'? (+e.target.value||0) : e.target.value; save(); }
+  if(e.target.hasAttribute('data-grid')) state.grid=+e.target.value;
+});
+document.getElementById('opts').addEventListener('input',e=>{ const k=e.target.dataset.o; if(k&&e.target.type==='number') state.opts[k]=+e.target.value||0; });
+document.getElementById('opts').addEventListener('click',e=>{ const b=e.target.closest('[data-sup]'); if(b){ state.opts.support=b.dataset.sup; renderOpts(); save(); } });
+function setTool(t){ state.tool=t; state.pending=null; document.querySelectorAll('.tool').forEach(b=>b.classList.toggle('on',b.dataset.tool===t)); renderOpts(); schedule(); }
+document.getElementById('tools').addEventListener('click',e=>{ const b=e.target.closest('.tool'); if(b) setTool(b.dataset.tool); });
+
+/* =====================================================================
+   SIDE PANEL
+   ===================================================================== */
+function renderStatus(){
+  const r=state.res, el=document.getElementById('status'); let cls='neutral', big='', body='', kv='';
+  if(!r||r.status==='empty'){ big='✏️ Draw your structure'; body='Choose <b>Member</b> on the left and click on the grid to draw beams, rafters or posts — or start from a <b>Template</b> at the top.'; }
+  else if(r.status==='nosupport'){ cls='warn'; big='⚠️ Add supports'; body='Use the <b>Support</b> tool to show where the structure rests on a wall, post or foundation.'; }
+  else if(r.status==='unstable'){ cls='warn'; const n=nodeById(r.nodeId); big='⚠️ Not stable yet'; body=`The structure can move or fold up — joint <b>${n?nodeName(n):'?'}</b> is free to move ${r.dir}. Add a support, add a diagonal brace, or make a connection <b>rigid</b>.`; }
+  else {
+    const c=getCombo(), lam=r.lambda, who=(c.maxWho&&memberById(c.maxWho))||model.members[0];
+    const anyLoad = r.hasApplied || model.selfWeight;
+    if(!anyLoad){ big='Add some loads'; body='Use <b>Point load</b> or <b>Spread load</b> to put weight on the structure.'; }
+    else if(c.fails){ cls='bad'; big=`✕ ${c.fails} member${c.fails>1?'s':''} fail${c.fails>1?'':'s'}`; body=`Worst is <b>${memName(who)}</b> at <b>${fmt(c.maxU*100)}%</b> of its capacity (${c.mem[who.id].gov.toLowerCase()}). Try a bigger size, shorter span, or extra support.`; }
+    else { cls='ok'; big='✓ Everything holds'; body=`Most stressed: <b>${memName(who)}</b> at <b>${fmt(c.maxU*100)}%</b> of capacity (${c.mem[who.id].gov.toLowerCase()}).`; }
+    if(anyLoad){
+      let bp; if(lam.lam===0) bp='Fails under its own weight'; else if(!isFinite(lam.lam)) bp='No added loads'; else bp=`${fmt(lam.lam,2)}× your loads`;
+      kv=`<div class="kv"><span>Breaking point</span><b>${bp}</b>${isFinite(lam.lam)&&lam.lam>0&&lam.who?`<span>First to fail</span><b>${memName(memberById(lam.who)||{id:'?'})}</b>`:''}<span>Biggest movement</span><b>${fmt(c.maxDisp,2)} in</b>${state.mult!==1?`<span>Showing loads at</span><b>${fmt(state.mult,2)}×</b>`:''}</div>`;
+    }
+  }
+  el.innerHTML=`<div class="status ${cls}"><div class="big">${big}</div><p>${body}</p>${kv}</div>`;
+}
+function renderSel(){
+  const el=document.getElementById('sel'), s=state.sel;
+  if(!s){ el.innerHTML=`<div class="card"><h3>Selection</h3><div class="muted">Click a member or joint with the <b>Select</b> tool to see its size, loads and detailed results.</div></div>`; return; }
+  if(s.type==='member'){ const m=memberById(s.id); if(!m){state.sel=null;return renderSel();} const a=nodeById(m.a), b=nodeById(m.b);
+    const L=Math.hypot(b.x-a.x,b.y-a.y), ang=Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI, pitch=Math.abs(b.x-a.x)>1e-9?Math.abs((b.y-a.y)/(b.x-a.x))*12:Infinity;
+    el.innerHTML=`<div class="card"><div class="selh"><span class="name">Member ${memName(m)}</span><button class="btn sm danger" data-act="del">Delete</button></div>
+      <div class="muted">${nodeName(a)} → ${nodeName(b)} · angle ${fmt(ang,1)}°${isFinite(pitch)&&pitch>0.01?` · pitch ${fmt(pitch,2)}/12`:''}</div>
+      <div class="grid2"><label class="field">Length (ft)<input type="number" step="0.25" min="0.1" data-k="len" value="${+L.toFixed(4)}"></label>
+      <label class="field">Joints<select data-k="release">${RELEASES.map(([v,l])=>`<option value="${v}"${m.release===v?' selected':''}>${l}</option>`).join('')}</select></label></div>
+      <label class="field">Size / material<select data-k="section">${sectionOptions(m.section)}</select></label>
+      ${m.section==='custom'?`<div class="grid2"><label class="field">Width (in)<input type="number" step="0.25" data-k="cb" value="${m.cb??1.5}"></label><label class="field">Depth (in)<input type="number" step="0.25" data-k="cd" value="${m.cd??5.5}"></label></div><label class="field">Material<select data-k="cmat">${Object.entries(MATERIALS).map(([k,v])=>`<option value="${k}"${(m.cmat||'dfl')===k?' selected':''}>${v.name}</option>`).join('')}</select></label>`:''}
+      <label class="chk" title="If on, the member can only buckle in the plane of the drawing (sheathing, blocking or bracing stops sideways buckling)."><input type="checkbox" data-k="braced"${m.braced!==false?' checked':''}> Braced sideways (sheathing / blocking)</label>
+      <div class="grid2"><label class="field">Spread load (lb/ft)<input type="number" step="10" data-k="w" value="${+m.w||0}"></label>
+      <label class="field">Direction<select data-k="wType">${WTYPES.map(([v,l])=>`<option value="${v}"${m.wType===v?' selected':''}>${l}</option>`).join('')}</select></label></div>
+      <div class="row" style="margin-top:10px"><button class="btn sm" data-act="allsize">Use this size on all members</button><button class="btn sm" data-act="split">Split in half</button></div></div>`;
+  } else { const n=nodeById(s.id); if(!n){state.sel=null;return renderSel();}
+    el.innerHTML=`<div class="card"><div class="selh"><span class="name">Joint ${nodeName(n)}</span><button class="btn sm danger" data-act="del">Delete</button></div>
+      <div class="grid2"><label class="field">X (ft)<input type="number" step="0.5" data-k="x" value="${n.x}"></label><label class="field">Y (ft)<input type="number" step="0.5" data-k="y" value="${n.y}"></label></div>
+      <label class="field">Support<select data-k="support">${[['none','None (free joint)'],...SUPPORTS.map(s=>[s[0],supportName(s[0])])].map(([v,l])=>`<option value="${v}"${n.support===v?' selected':''}>${l}</option>`).join('')}</select></label>
+      <div class="grid2"><label class="field">Point load down (lb)<input type="number" step="100" data-k="fy" value="${+n.fy||0}"></label><label class="field">Sideways → (lb)<input type="number" step="100" data-k="fx" value="${+n.fx||0}"></label></div></div>`;
+  }
+}
+let editCk=false;
+const selEl=document.getElementById('sel');
+selEl.addEventListener('focusin',()=>{editCk=false;});
+function applyField(t){
+  const k=t.dataset.k; if(!k||!state.sel) return;
+  if(!editCk){ checkpoint(); editCk=true; }
+  const val = t.type==='checkbox'? t.checked : t.type==='number'? +t.value : t.value;
+  if(t.type==='number' && (t.value===''||!isFinite(val))) return;
+  let rebuild=false;
+  if(state.sel.type==='member'){ const m=memberById(state.sel.id);
+    if(k==='len'){ if(val<=0.01) return; const a=nodeById(m.a), b=nodeById(m.b), L=Math.hypot(b.x-a.x,b.y-a.y)||1; b.x=r6(a.x+(b.x-a.x)/L*val); b.y=r6(a.y+(b.y-a.y)/L*val); }
+    else if(k==='section'){ m.section=val; if(val==='custom'){ const p=props({section:DEFAULT_SECTION}); m.cb=m.cb||1.5; m.cd=m.cd||5.5; m.cmat=m.cmat||'dfl'; } rebuild=true; }
+    else m[k]=val;
+  } else { const n=nodeById(state.sel.id); n[k]= (k==='x'||k==='y')? r6(val) : val; }
+  update(); if(rebuild) renderSel();
+}
+selEl.addEventListener('input',e=>{ if(e.target.type==='number') applyField(e.target); });
+selEl.addEventListener('change',e=>{ if(e.target.type!=='number') applyField(e.target); editCk=false; });
+selEl.addEventListener('click',e=>{ const b=e.target.closest('[data-act]'); if(!b||!state.sel) return; const act=b.dataset.act;
+  if(act==='del'){ checkpoint(); if(state.sel.type==='member') deleteMember(state.sel.id); else deleteNode(state.sel.id); state.sel=null; changed(); }
+  else if(act==='allsize'){ const m=memberById(state.sel.id); checkpoint(); model.members.forEach(x=>{ x.section=m.section; x.cb=m.cb; x.cd=m.cd; x.cmat=m.cmat; }); changed(); }
+  else if(act==='split'){ const m=memberById(state.sel.id), a=nodeById(m.a), b=nodeById(m.b); checkpoint(); const n=splitMember(m,(a.x+b.x)/2,(a.y+b.y)/2); state.sel={type:'node',id:n.id}; changed(); }
+});
+function miniChart(arr,L,color,title,conv,unit){
+  const W=300,H=74,pad=4; let mx=0; for(const v of arr) mx=Math.max(mx,Math.abs(v)); const k=mx>0?(H/2-10)/mx:0;
+  const pts=[...arr].map((v,i)=>[pad+i/NS*(W-2*pad), H/2-v*k]);
+  let mi=0; arr.forEach((v,i)=>{ if(Math.abs(v)>Math.abs(arr[mi])) mi=i; });
+  const d=`M${pad},${H/2} `+pts.map(p=>`L${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')+` L${W-pad},${H/2} Z`;
+  return `<div class="chart"><div class="lbl"><span>${title}</span><span style="color:${color}">max ${fmtSmart(conv(arr[mi]))} ${unit} @ ${fmt(mi/NS*L,1)} ft</span></div>
+  <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="background:#f8fafc;border-radius:8px"><path d="M0 ${H/2}H${W}" stroke="#cbd5e1"/><path d="${d}" fill="${color}" fill-opacity=".18" stroke="${color}" stroke-width="1.8"/><circle cx="${pts[mi][0]}" cy="${pts[mi][1]}" r="3" fill="${color}"/></svg></div>`;
+}
+function renderSelRes(){
+  const el=document.getElementById('selres'), s=state.sel, c=getCombo();
+  if(!s||!c){ el.innerHTML=''; return; }
+  if(s.type==='member'){ const m=memberById(s.id), C=m&&c.mem[m.id]; if(!C){el.innerHTML='';return;}
+    const me=state.res.ME.find(x=>x.id===m.id), p=me.p, cap=me.cap, L=me.L/12, u=C.maxU, fail=u>1+1e-9, cls=fail?'bad':u>0.85?'warn':'ok';
+    const N=C.N[C.at], comp=C.mN<0;
+    const rows=[
+      ['Bending moment',`${fmtSmart(Math.abs(C.mM)/12)} lb·ft`,`capacity ${fmtSmart(cap.M/12)} lb·ft`],
+      ['Shear force',`${fmtSmart(Math.abs(C.mV))} lb`,`capacity ${fmtSmart(cap.V)} lb`],
+      ['Axial force',Math.abs(C.mN)<0.5?'—':`${fmtSmart(Math.abs(C.mN))} lb ${comp?'push':'pull'}`, comp?`push capacity ${fmtSmart(cap.C)} lb${cap.buck?' (buckling limit)':''}`:`pull capacity ${fmtSmart(cap.T)} lb`],
+      ['Bending stress',`${fmt(Math.abs(C.mM)/p.S)} psi`,`allowed ${fmt(p.Fb)} psi`],
+      ['Sag between ends',`${fmt(C.rel,3)} in`, C.rel>1e-6?`L/${fmt(me.L/C.rel)}${me.L/C.rel<240?' — bouncy (> L/240)':''}`:''],
+      ['Member weight',`${fmt(me.swq*12,1)} lb/ft`,`${esc(p.matName)}`]];
+    el.innerHTML=`<div class="card"><h3>Results — ${memName(m)} (${esc(p.label)})</h3>
+      <div class="row" style="justify-content:space-between"><b style="font-size:22px">${fmt(u*100)}%</b><span class="pill ${cls}">${fail?'FAILS':u>0.85?'CLOSE TO LIMIT':'OK'}</span></div>
+      <div class="ubar"><i style="width:${Math.min(100,u/1.5*100)}%;background:${utilColor(u)}"></i><span class="lim" style="left:${100/1.5}%"></span></div>
+      <div class="muted">Governed by <b>${C.gov.toLowerCase()}</b> at ${fmt(C.at/NS*L,1)} ft from ${nodeName(nodeById(m.a))}.</div>
+      <table class="res">${rows.map(r=>`<tr><td>${r[0]}${r[2]?`<small>${r[2]}</small>`:''}</td><td><b>${r[1]}</b></td></tr>`).join('')}</table>
+      ${miniChart(C.M,L,'#8b5cf6','Bending moment',v=>v/12,'lb·ft')}
+      ${miniChart(C.V,L,'#0284c7','Shear',v=>v,'lb')}
+      ${Math.abs(C.mN)>0.5?miniChart(C.N,L,comp?'#2563eb':'#ea580c','Axial (+pull / −push)',v=>v,'lb'):''}</div>`;
+  } else { const n=nodeById(s.id); const i=state.res.idx.get(n?n.id:-1); if(i==null){el.innerHTML='';return;}
+    const dx=c.D[3*i], dy=c.D[3*i+1]; const r=state.res.restr; let rr='';
+    if(r[3*i]) rr+=`<tr><td>Sideways reaction</td><td><b>${fmtSmart(Math.abs(c.R[3*i]))} lb ${c.R[3*i]>=0?'→':'←'}</b></td></tr>`;
+    if(r[3*i+1]) rr+=`<tr><td>Vertical reaction<small>what the support pushes back with</small></td><td><b>${fmtSmart(Math.abs(c.R[3*i+1]))} lb ${c.R[3*i+1]>=0?'↑':'↓'}</b></td></tr>`;
+    if(r[3*i+2]) rr+=`<tr><td>Moment reaction</td><td><b>${fmtSmart(Math.abs(c.R[3*i+2])/12)} lb·ft</b></td></tr>`;
+    el.innerHTML=`<div class="card"><h3>Results — Joint ${nodeName(n)}</h3><table class="res">
+      <tr><td>Moves sideways</td><td><b>${fmt(Math.abs(dx),3)} in ${Math.abs(dx)<5e-4?'':dx>0?'→':'←'}</b></td></tr>
+      <tr><td>Moves up/down</td><td><b>${fmt(Math.abs(dy),3)} in ${Math.abs(dy)<5e-4?'':dy>0?'↑':'↓'}</b></td></tr>${rr}</table></div>`;
+  }
+}
+function select(type,id){ state.sel= type?{type,id}:null; renderSel(); renderSelRes(); schedule(); }
+
+/* =====================================================================
+   POINTER / KEYBOARD INTERACTION
+   ===================================================================== */
+const pointers=new Map();
+function spos(e){ const r=svg.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
+function createMemberBetween(p,q){
+  if(Math.hypot(p.x-q.x,p.y-q.y)<1e-6) return null;
+  checkpoint(); const na=getOrCreateNode(p), nb=getOrCreateNode(q); if(na===nb){ return null; }
+  const m=addMemberSplit(na,nb,{section:state.opts.section, release:state.opts.release});
+  if(m) state.sel={type:'member',id:m.id};
+  changed(); return nb;
+}
+function nodeForTool(sx,sy){ let n=hitNode(sx,sy); if(n) return n; const p=snapAt(sx,sy); if(p.kind==='member'){ return getOrCreateNode(p); } return null; }
+function toolClick(sx,sy){
+  const t=state.tool;
+  if(t==='support'||t==='point'){
+    const hn=hitNode(sx,sy), p=hn?null:snapAt(sx,sy); if(!hn&&p.kind!=='member') return;
+    checkpoint(); const n=hn||getOrCreateNode(p);
+    if(t==='support') n.support = n.support===state.opts.support?'none':state.opts.support;
+    else { n.fy=state.opts.pfy; n.fx=state.opts.pfx; }
+    state.sel={type:'node',id:n.id}; changed();
+  } else if(t==='udl'){ const m=hitMember(sx,sy); if(!m) return; checkpoint(); m.w=state.opts.w; m.wType=state.opts.wType; state.sel={type:'member',id:m.id}; changed(); }
+  else if(t==='delete'){ const n=hitNode(sx,sy); if(n){ checkpoint(); deleteNode(n.id); if(state.sel) state.sel=null; changed(); return; }
+    const m=hitMember(sx,sy); if(m){ checkpoint(); deleteMember(m.id); state.sel=null; changed(); } }
+}
+svg.addEventListener('contextmenu',e=>e.preventDefault());
+svg.addEventListener('pointerdown',e=>{
+  stopAnim();
+  const p=spos(e); svg.setPointerCapture(e.pointerId); pointers.set(e.pointerId,p); state.cursor=p;
+  if(pointers.size===2){ const [a,b]=[...pointers.values()]; state.drag={type:'pinch', d0:Math.hypot(a.x-b.x,a.y-b.y), c0:{x:(a.x+b.x)/2,y:(a.y+b.y)/2}, v0:{...state.view}}; if(state.tool==='member'&&state.pending&&state.pendingFresh) state.pending=null; return; }
+  if(pointers.size>2) return;
+  const base={sx:p.x, sy:p.y, ox:state.view.ox, oy:state.view.oy, moved:false};
+  if(e.button===1||e.button===2){ if(state.tool==='member'&&e.button===2&&state.pending){ state.pending=null; renderHint(); schedule(); return; } state.drag={...base,type:'pan',moved:true}; return; }
+  const t=state.tool;
+  if(t==='member'){ const q=snapAt(p.x,p.y,{free:e.shiftKey}); state.pendingFresh=!state.pending; if(!state.pending) state.pending=q; state.drag={...base,type:'member'}; state.snap=q; renderHint(); schedule(); return; }
+  if(t==='select'){
+    const n=hitNode(p.x,p.y); if(n){ select('node',n.id); state.drag={...base,type:'node',id:n.id}; return; }
+    const m=hitMember(p.x,p.y); if(m){ select('member',m.id); const a=nodeById(m.a), b=nodeById(m.b); state.drag={...base,type:'mem',id:m.id,a0:{x:a.x,y:a.y},b0:{x:b.x,y:b.y}}; return; }
+    state.drag={...base,type:'pan',deselect:true}; return;
+  }
+  state.drag={...base,type:'click'};
+});
+svg.addEventListener('pointermove',e=>{
+  const p=spos(e); if(pointers.has(e.pointerId)) pointers.set(e.pointerId,p); state.cursor=p; state.shift=e.shiftKey;
+  const w=s2w(p.x,p.y); document.getElementById('coords').textContent=`x ${fmt(w.x,2)} ft   y ${fmt(w.y,2)} ft`;
+  const d=state.drag;
+  if(d&&d.type==='pinch'){ if(pointers.size<2) return; const [a,b]=[...pointers.values()]; const dd=Math.hypot(a.x-b.x,a.y-b.y), c={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+    const v0=d.v0, ns=Math.max(3,Math.min(600,v0.sc*dd/d.d0)); const wx=(d.c0.x-v0.ox)/v0.sc, wy=(v0.oy-d.c0.y)/v0.sc; state.view.sc=ns; state.view.ox=c.x-wx*ns; state.view.oy=c.y+wy*ns; schedule(); return; }
+  if(!d){ // hover
+    const t=state.tool; let h=null;
+    if(t!=='member'){ const n=hitNode(p.x,p.y); if(n&&t!=='udl') h={type:'node',id:n.id}; else { const m=hitMember(p.x,p.y); if(m&&t!=='point'&&t!=='support') h={type:'member',id:m.id}; } }
+    state.hover=h;
+    state.snap = (t==='member'||t==='support'||t==='point')? snapAt(p.x,p.y,{free:e.shiftKey}) : null;
+    if((t==='support'||t==='point')&&state.snap&&state.snap.kind!=='node'&&state.snap.kind!=='member') state.snap=null;
+    svg.style.cursor = t==='select'? (h?'pointer':'grab') : t==='delete'? (h?'not-allowed':'default') : 'crosshair';
+    schedule(); return; }
+  const mv=Math.hypot(p.x-d.sx,p.y-d.sy)>5;
+  if(d.type==='pan'||d.type==='click'){ if(mv||d.moved){ d.moved=true; state.view.ox=d.ox+(p.x-d.sx); state.view.oy=d.oy+(p.y-d.sy); svg.style.cursor='grabbing'; schedule(); } }
+  else if(d.type==='node'){ if(mv||d.moved){ if(!d.moved){checkpoint(); d.moved=true;} const n=nodeById(d.id), q=snapAt(p.x,p.y,{exclude:d.id,members:false,free:e.shiftKey}); n.x=q.x; n.y=q.y; d.target=q.kind==='node'?q.nodeId:null; state.hover=null; update(); } }
+  else if(d.type==='mem'){ if(mv||d.moved){ if(!d.moved){checkpoint(); d.moved=true;} const m=memberById(d.id), a=nodeById(m.a), b=nodeById(m.b), w0=s2w(d.sx,d.sy), g=e.shiftKey?1e-6:state.grid;
+      const dx=Math.round((w.x-w0.x)/g)*g, dy=Math.round((w.y-w0.y)/g)*g; a.x=r6(d.a0.x+dx); a.y=r6(d.a0.y+dy); b.x=r6(d.b0.x+dx); b.y=r6(d.b0.y+dy); state.hover=null; update(); } }
+  else if(d.type==='member'){ state.snap=snapAt(p.x,p.y,{free:e.shiftKey}); schedule(); }
+});
+function endPointer(e){
+  const p=spos(e); pointers.delete(e.pointerId); const d=state.drag;
+  if(!d) return;
+  if(d.type==='pinch'){ if(pointers.size===0) state.drag=null; return; }
+  state.drag=null; svg.style.cursor='';
+  if(e.type==='pointercancel') { schedule(); return; }
+  if(d.type==='pan'){ if(!d.moved&&d.deselect) select(null); }
+  else if(d.type==='click'){ if(!d.moved) toolClick(p.x,p.y); }
+  else if(d.type==='node'){ if(d.moved){ if(d.target) mergeNodes(d.id,d.target); if(!nodeById(d.id)&&d.target) state.sel={type:'node',id:d.target}; changed(); } }
+  else if(d.type==='mem'){ if(d.moved) changed(); }
+  else if(d.type==='member'){
+    const q=snapAt(p.x,p.y,{free:e.shiftKey}), moved=Math.hypot(p.x-d.sx,p.y-d.sy)>6, pend=state.pending;
+    if(moved){ createMemberBetween(pend,q); state.pending = state.pendingFresh? null : {x:q.x,y:q.y}; }
+    else if(!state.pendingFresh){ if(Math.hypot(q.x-pend.x,q.y-pend.y)<1e-6) state.pending=null; else { createMemberBetween(pend,q); state.pending={x:q.x,y:q.y}; } }
+    renderHint();
+  }
+  schedule();
+}
+svg.addEventListener('pointerup',endPointer);
+svg.addEventListener('pointercancel',endPointer);
+svg.addEventListener('pointerleave',()=>{ if(!state.drag){ state.hover=null; state.cursor=null; state.snap=null; schedule(); } });
+svg.addEventListener('wheel',e=>{ e.preventDefault(); const p=spos(e); zoomAt(p.x,p.y,Math.exp(-e.deltaY*(e.ctrlKey?0.01:0.0015))); },{passive:false});
+document.getElementById('zin').onclick=()=>zoomAt(svg.clientWidth/2,svg.clientHeight/2,1.25);
+document.getElementById('zout').onclick=()=>zoomAt(svg.clientWidth/2,svg.clientHeight/2,0.8);
+document.getElementById('zfit').onclick=fit;
+document.addEventListener('keydown',e=>{
+  if(e.target.matches('input,select,textarea')) return;
+  const k=e.key.toLowerCase();
+  if((e.ctrlKey||e.metaKey)&&k==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
+  if((e.ctrlKey||e.metaKey)&&k==='y'){ e.preventDefault(); redo(); return; }
+  if(e.ctrlKey||e.metaKey||e.altKey) return;
+  if(k==='escape'){ if(document.getElementById('modal').style.display==='flex'){ closeHelp(); return; } if(state.pending){ state.pending=null; renderHint(); } else select(null); schedule(); return; }
+  if((k==='delete'||k==='backspace')&&state.sel){ e.preventDefault(); checkpoint(); if(state.sel.type==='member') deleteMember(state.sel.id); else deleteNode(state.sel.id); state.sel=null; changed(); return; }
+  const tools={v:'select',m:'member',s:'support',p:'point',d:'udl',x:'delete'}; if(tools[k]){ setTool(tools[k]); return; }
+  if(k==='f') fit();
+});
+
+/* --- panel controls --- */
+const multEl=document.getElementById('mult'), multOut=document.getElementById('multOut');
+function setMult(v){ state.mult=Math.max(0,v); multEl.value=state.mult; multOut.textContent=fmt(state.mult,2)+'×'; state.comboKey=null; renderStatus(); renderSelRes(); schedule(); }
+multEl.addEventListener('input',()=>{ stopAnim(); state.flash=null; setMult(+multEl.value); });
+document.getElementById('mult1').onclick=()=>{ stopAnim(); state.flash=null; setMult(1); };
+let anim=null;
+function stopAnim(){ if(anim){ cancelAnimationFrame(anim.raf); anim=null; } }
+document.getElementById('breakBtn').onclick=()=>{
+  const r=state.res; if(!r||r.status!=='ok'||!r.lambda) return; stopAnim();
+  const lam=r.lambda.lam; if(!isFinite(lam)){ alert('There are no added loads to scale up. Add a point or spread load first.'); return; }
+  const target=lam, sl=multEl; if(+sl.max<target*1.1) sl.max=Math.ceil(target*1.3);
+  const from=0, dur=2600, t0=performance.now(); state.flash=null;
+  const step=now=>{ const t=Math.min(1,(now-t0)/dur), e=1-Math.pow(1-t,3); setMult(from+(target*1.0005-from)*e);
+    if(t<1) anim.raf=requestAnimationFrame(step); else { anim=null; state.flash=r.lambda.who; schedule(); } };
+  anim={raf:requestAnimationFrame(step)};
+};
+document.getElementById('selfw').addEventListener('change',e=>{ checkpoint(); model.selfWeight=e.target.checked; update(); });
+document.querySelectorAll('[data-show]').forEach(cb=>cb.addEventListener('change',()=>{ state.show[cb.dataset.show]=cb.checked; save(); schedule(); }));
+document.getElementById('defMode').addEventListener('change',e=>{ state.defMode=e.target.value; schedule(); });
+document.getElementById('undo').onclick=undo; document.getElementById('redo').onclick=redo;
+
+/* =====================================================================
+   TEMPLATES
+   ===================================================================== */
+function build(fn){ model=emptyModel(); const B={ n:(x,y,sup='none')=>{ const n=addNode(x,y); n.support=sup; return n; }, m:(a,b,o={})=>newMember(a,b,o) }; fn(B); return model; }
+const TEMPLATES={
+  beam:()=>build(B=>{ const a=B.n(0,0,'pin'), b=B.n(12,0,'rollerY'); B.m(a,b,{section:'dfl:2x10', w:60}); }),
+  cant:()=>build(B=>{ const a=B.n(0,0,'fixed'), b=B.n(6,0); B.m(a,b,{section:'w:W8x10', w:50}); b.fy=1500; }),
+  gable:()=>build(B=>{ const a=B.n(0,0,'pin'), c=B.n(12,6), b=B.n(24,0,'rollerY');
+    B.m(a,c,{section:'dfl:2x10', release:'both', w:70, wType:'projected'}); B.m(c,b,{section:'dfl:2x10', release:'both', w:70, wType:'projected'}); B.m(a,b,{section:'dfl:2x8', release:'both', w:10}); }),
+  fink:()=>build(B=>{ const b0=B.n(0,0,'pin'), b1=B.n(8,0), b2=B.n(16,0), b3=B.n(24,0,'rollerY'), t1=B.n(6,2), t2=B.n(12,4), t3=B.n(18,2);
+    const top={section:'dfl:2x6', w:80, wType:'projected'};
+    B.m(b0,t1,{...top,release:'start'}); B.m(t1,t2,top); B.m(t2,t3,top); B.m(t3,b3,{...top,release:'end'});
+    const bot={section:'dfl:2x6', w:20}; B.m(b0,b1,{...bot,release:'start'}); B.m(b1,b2,bot); B.m(b2,b3,{...bot,release:'end'});
+    const web={section:'dfl:2x4', release:'both'}; B.m(b1,t1,web); B.m(b1,t2,web); B.m(b2,t2,web); B.m(b2,t3,web); }),
+  portal:()=>build(B=>{ const a=B.n(0,0,'fixed'), b=B.n(0,12), c=B.n(20,12), d=B.n(20,0,'fixed');
+    B.m(a,b,{section:'w:W8x18'}); B.m(b,c,{section:'w:W12x26', w:600}); B.m(c,d,{section:'w:W8x18'}); b.fx=2000; }),
+  blank:()=>emptyModel()
+};
+function loadTemplate(k){ if(!TEMPLATES[k]) return; checkpoint(); model=TEMPLATES[k](); state.sel=null; state.flash=null; stopAnim(); afterLoad(); setMult(1); fit(); }
+document.getElementById('tpl').addEventListener('change',e=>{ loadTemplate(e.target.value); e.target.value=''; });
+
+/* =====================================================================
+   SAVE / LOAD / SHARE
+   ===================================================================== */
+function validModel(m){ return m&&Array.isArray(m.nodes)&&Array.isArray(m.members); }
+function encodeModel(){ return btoa(unescape(encodeURIComponent(JSON.stringify(model)))); }
+document.getElementById('share').onclick=async()=>{
+  const url=location.href.split('#')[0]+'#m='+encodeModel();
+  try{ await navigator.clipboard.writeText(url); flashBtn('share','Link copied!'); } catch(e){ prompt('Copy this link:',url); }
+};
+function flashBtn(id,txt){ const b=document.getElementById(id), o=b.textContent; b.textContent=txt; setTimeout(()=>b.textContent=o,1600); }
+document.getElementById('export').onclick=()=>{ const blob=new Blob([JSON.stringify(model,null,1)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='structure.json'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); };
+document.getElementById('import').onclick=()=>document.getElementById('file').click();
+document.getElementById('file').addEventListener('change',async e=>{ const f=e.target.files[0]; if(!f) return; try{ const m=JSON.parse(await f.text()); if(!validModel(m)) throw 0; checkpoint(); model=m; afterLoad(); fit(); }catch(err){ alert('That file does not look like a saved structure.'); } e.target.value=''; });
+const modal=document.getElementById('modal');
+function openHelp(){ modal.style.display='flex'; }
+function closeHelp(){ modal.style.display='none'; try{ localStorage.setItem('loadcalc.seen','1'); }catch(e){} }
+document.getElementById('help').onclick=openHelp;
+document.getElementById('mClose').onclick=()=>{ closeHelp(); if(!model.members.length) setTool('member'); };
+document.getElementById('mTpl').onclick=()=>{ closeHelp(); loadTemplate('fink'); };
+modal.addEventListener('click',e=>{ if(e.target===modal) closeHelp(); });
+
+/* =====================================================================
+   INIT
+   ===================================================================== */
+(function init(){
+  let loaded=false;
+  if(location.hash.startsWith('#m=')){ try{ const m=JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(3))))); if(validModel(m)){ model=m; loaded=true; } }catch(e){} history.replaceState(null,'',location.pathname+location.search); }
+  if(!loaded){ try{ const s=JSON.parse(localStorage.getItem('loadcalc.v1')||'null'); if(s&&validModel(s.model)){ model=s.model; Object.assign(state.opts,s.opts||{}); Object.assign(state.show,s.show||{}); loaded=true; } }catch(e){} }
+  if(!loaded) model=TEMPLATES.gable();
+  if(!model.nextId) model.nextId=1+Math.max(0,...model.nodes.map(n=>n.id),...model.members.map(m=>m.id));
+  document.querySelectorAll('[data-show]').forEach(cb=>cb.checked=!!state.show[cb.dataset.show]);
+  document.getElementById('selfw').checked=model.selfWeight!==false;
+  updUndo(); renderOpts(); changed();
+  requestAnimationFrame(fit);
+  let rzT=0; window.addEventListener('resize',()=>{ schedule(); clearTimeout(rzT); rzT=setTimeout(fit,150); });
+  let seen=false; try{ seen=!!localStorage.getItem('loadcalc.seen'); }catch(e){}
+  if(!seen) openHelp();
+})();
+</script>
+</body>
+</html>
