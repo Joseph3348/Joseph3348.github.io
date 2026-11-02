@@ -432,7 +432,7 @@ function boards(m){ return [props(m), ...(m.sisters||[]).map(id=>props({section:
 function boardsLabel(m){ const ls=boards(m).map(p=>p.label); return ls.length>1&&ls.every(l=>l===ls[0]) ? `${ls.length}× ${ls[0]}` : ls.join(' + '); }
 function removeOrphans(){
   for(const n of model.nodes) if(n.host&&!memberById(n.host.m)) delete n.host;
-  const used=new Set(); model.members.forEach(m=>{used.add(m.a);used.add(m.b);}); model.nodes.forEach(n=>{ if(n.host) used.add(n.id); });
+  const used=new Set(); model.members.forEach(m=>{used.add(m.a);used.add(m.b);}); model.nodes.forEach(n=>{ if(n.host&&((n.support&&n.support!=='none')||+n.fx||+n.fy)) used.add(n.id); });
   model.nodes=model.nodes.filter(n=>used.has(n.id)); }
 function deleteMember(id){ model.members=model.members.filter(m=>m.id!==id); removeOrphans(); }
 function deleteNode(id){ model.members=model.members.filter(m=>m.a!==id&&m.b!==id); model.nodes=model.nodes.filter(n=>n.id!==id); removeOrphans(); }
@@ -468,10 +468,23 @@ function expandModel(mdl){
     const chain=[{id:m.a,t:0},...hosted.map(n=>({id:n.id,t:n.host.t})),{id:m.b,t:1}], ns=chain.length-1;
     for(let k=0;k<ns;k++){ const id=m.id+':'+k; members.push({...m,id,a:chain[k].id,b:chain[k+1].id,release:relFor(m.release||'none',k===0,k===ns-1)}); parentOf[id]={m:m.id,k,t0:chain[k].t,t1:chain[k+1].t}; }
   }
-  return {mdl:{...mdl,members}, parentOf};
+  // Buckling length: walk through "pass-through" joints — no support and exactly two members meeting in a
+  // straight line (e.g. a leftover joint, a point load, or a member that was split) — because nothing braces
+  // the member there. Supports and members meeting at an angle are brace points.
+  const pos=new Map(mdl.nodes.map(n=>[n.id,n])), att=new Map();
+  for(const p of members) for(const id of [p.a,p.b]){ if(!att.has(id)) att.set(id,[]); att.get(id).push(p); }
+  const geo=p=>{ const a=pos.get(p.a), b=pos.get(p.b), L=Math.hypot(b.x-a.x,b.y-a.y)||1e-9; return {L,ux:(b.x-a.x)/L,uy:(b.y-a.y)/L}; };
+  const pass=new Set();
+  for(const [id,ps] of att){ const n=pos.get(id); if(!n||(n.support&&n.support!=='none')||ps.length!==2) continue;
+    const g1=geo(ps[0]), g2=geo(ps[1]); if(Math.abs(g1.ux*g2.uy-g1.uy*g2.ux)<0.02) pass.add(id); }
+  for(const p of members){ let Lu=geo(p).L;
+    for(const start of [p.a,p.b]){ let cur=p, node=start, guard=0;
+      while(pass.has(node)&&guard++<10000){ const nxt=att.get(node).find(q=>q!==cur); if(!nxt) break; Lu+=geo(nxt).L; node=nxt.a===node?nxt.b:nxt.a; cur=nxt; if(cur===p) break; } }
+    p.Lu=Lu; }
+  return {mdl:{...mdl,members}, parentOf, pass};
 }
 function analyzeModel(){
-  syncHosted(); const ex=expandModel(model), r=analyze(ex.mdl); r.parentOf=ex.parentOf;
+  syncHosted(); const ex=expandModel(model), r=analyze(ex.mdl); r.parentOf=ex.parentOf; r.pass=ex.pass;
   if(r.lambda&&r.lambda.who!=null&&ex.parentOf[r.lambda.who]) r.lambda.who=ex.parentOf[r.lambda.who].m;
   return r;
 }
@@ -486,8 +499,12 @@ function combineP(res,lam){
       for(let i=0;i<=NS;i++){ P.t.push(po.t0+(po.t1-po.t0)*i/NS); for(const k of keys) P[k].push(C[k][i]); }
       if(!best||C.maxU>best.C.maxU) best={C,me,off};
       if(Math.abs(C.mN)>Math.abs(mN)) mN=C.mN; if(Math.abs(C.mV)>Math.abs(mV)) mV=C.mV; if(Math.abs(C.mM)>Math.abs(mM)){ mM=C.mM; mMi=off+C.mMi; }
-      if(C.rel>1e-9&&me.L/C.rel<worst){ worst=me.L/C.rel; rel=C.rel; relL=me.L; } }
-    Object.assign(P,{maxU:best.C.maxU, at:best.off+best.C.at, parts:best.C.parts, gov:best.C.gov, mN,mV,mM,mMi, rel, relL, me:best.me, pieces:g.length});
+      }
+    const runs=[[]]; g.forEach(({me},k)=>{ if(k>0&&!(res.pass&&res.pass.has(me.m.a))) runs.push([]); runs[runs.length-1].push(me); });
+    for(const run of runs){ const v=[], s=[]; let Lr=0; for(const me of run){ const C=c.mem[me.id]; for(let i=0;i<=NS;i++){ v.push(C.vl[i]); s.push(Lr+me.L*i/NS); } Lr+=me.L; }
+      let r=0; for(let i=0;i<v.length;i++) r=Math.max(r,Math.abs(v[i]-(v[0]+(v[v.length-1]-v[0])*s[i]/Lr)));
+      if(r>1e-9&&Lr/r<worst){ worst=Lr/r; rel=r; relL=Lr; } }
+    Object.assign(P,{maxU:best.C.maxU, at:best.off+best.C.at, parts:best.C.parts, gov:best.C.gov, mN,mV,mM,mMi, rel, relL, me:best.me, pieces:runs.length});
     out.mem[pid]=P; if(P.maxU>out.maxU){ out.maxU=P.maxU; out.maxWho=+pid; } if(P.maxU>1+1e-9) out.fails++; }
   return out;
 }
@@ -531,11 +548,12 @@ function analyze(mdl){
     cases.forEach((cs,ci)=>{ const fg=TtV(c,s,cs.fc); for(let i=0;i<6;i++) P[ci][dofs[i]]-=fg[i]; });
     // Sistered boards bend together: each board takes a share of the force in proportion to its stiffness.
     // caps[i] = member force at which board i reaches its own limit.
-    const caps=bs.map(b=>{ const sa=b.E*b.A/sEA, sb=b.E*b.I/sEI, Ib=(m.braced!==false)?b.I:b.Imin, Pe=Math.PI*Math.PI*b.Eb*Ib/L2/b.FSb, Pcr=b.Fc*b.A;
+    const Lb=m.Lu?m.Lu*12:L; // unbraced length for buckling (inches)
+    const caps=bs.map(b=>{ const sa=b.E*b.A/sEA, sb=b.E*b.I/sEI, Ib=(m.braced!==false)?b.I:b.Imin, Pe=Math.PI*Math.PI*b.Eb*Ib/(Lb*Lb)/b.FSb, Pcr=b.Fc*b.A;
       return {T:b.Ft*b.A/sa, C:Math.min(Pe,Pcr)/sa, buck:Pe<Pcr, M:b.Fb*b.S/sb, V:b.Fv*b.Av/sb, sb}; });
     let cmin=caps[0]; for(const x of caps) if(x.C<cmin.C) cmin=x;
     const cap={T:Math.min(...caps.map(x=>x.T)), C:cmin.C, buck:cmin.buck, M:Math.min(...caps.map(x=>x.M)), V:Math.min(...caps.map(x=>x.V))};
-    ME.push({m,id:m.id,ia,ib,L,c,s,p,bs,EI:sEI,k,rel,ret,inv,cases,dofs,cap,caps,swq});
+    ME.push({m,id:m.id,ia,ib,L,Lb,c,s,p,bs,EI:sEI,k,rel,ret,inv,cases,dofs,cap,caps,swq});
   }
   const restr=new Uint8Array(N);
   nodes.forEach((n,i)=>{ const t=n.support;
@@ -610,7 +628,8 @@ function utilAll(caps,N,V,M){ let best=null; for(const c of caps){ const u=utilP
 function maxUtilAt(res,lam){
   let best=0, who=null;
   for(const me of res.ME){ const [a,b]=me.res;
-    for(let i=0;i<=NS;i++){ const u=utilAll(me.caps, a.N[i]+lam*b.N[i], a.V[i]+lam*b.V[i], a.M[i]+lam*b.M[i]).u; if(u>best){best=u;who=me.id;} } }
+    for(let i=0;i<=NS;i++){ const u=utilAll(me.caps, a.N[i]+lam*b.N[i], a.V[i]+lam*b.V[i], a.M[i]+lam*b.M[i]).u; if(u>best){best=u;who=me.id;} }
+    const pk=peakExtra(me,lam); if(pk&&pk.up.u>best){ best=pk.up.u; who=me.id; } }
   return {u:best, who};
 }
 function findLambda(res){
@@ -621,6 +640,11 @@ function findLambda(res){
   for(let i=0;i<50;i++){ const mid=(lo+hi)/2; if(maxUtilAt(res,mid).u<1) lo=mid; else hi=mid; }
   return {lam:hi, who:maxUtilAt(res,hi*1.0000001).who};
 }
+// Under a spread load the largest bending moment can fall between sample points; find it exactly (where shear = 0).
+function peakExtra(me,lam){ const [a,b]=me.res, cs=me.cases, qt=cs[0].qt+lam*cs[1].qt; if(Math.abs(qt)<1e-12) return null;
+  const F1=a.F[1]+lam*b.F[1], x=-F1/qt; if(!(x>1e-9&&x<me.L-1e-9)) return null;
+  const F2=a.F[2]+lam*b.F[2], F0=a.F[0]+lam*b.F[0], qa=cs[0].qa+lam*cs[1].qa, M=-F2+F1*x+qt*x*x/2, N=-F0-qa*x;
+  return {x,M,N,up:utilAll(me.caps,N,0,M)}; }
 function combine(res,lam){
   const out={mem:{}, maxU:0, maxWho:null, fails:0, maxDisp:0, maxDispAt:null, lam};
   for(const me of res.ME){ const [a,b]=me.res;
@@ -634,12 +658,14 @@ function combine(res,lam){
       if(Math.abs(N)>Math.abs(mN)){mN=N;mNi=i;} if(Math.abs(V)>Math.abs(mV)) mV=V; if(Math.abs(M)>Math.abs(mM)){mM=M;mMi=i;}
       const dd=Math.hypot(C.gx[i],C.gy[i]); if(dd>out.maxDisp){ out.maxDisp=dd; out.maxDispAt={mem:me.id, i}; }
     }
+    let Nat=C.N[at]; const pk=peakExtra(me,lam);
+    if(pk){ const ip=Math.round(pk.x/me.L*NS); if(pk.up.u>mu){ mu=pk.up.u; parts=pk.up; at=ip; Nat=pk.N; } if(Math.abs(pk.M)>Math.abs(mM)){ mM=pk.M; mMi=ip; } }
     let rel=0; for(let i=0;i<=NS;i++){ const xi=i/NS; rel=Math.max(rel,Math.abs(C.vl[i]-(C.vl[0]+(C.vl[NS]-C.vl[0])*xi))); }
     let gov;
     if(parts.sh>=parts.ax+parts.b) gov='Shear';
     else if(parts.ax<0.1*parts.b) gov='Bending';
-    else if(parts.b<0.1*parts.ax) gov = C.N[at]>=0?'Tension (pull)':(parts.cap.buck?'Buckling (push)':'Compression (push)');
-    else gov = 'Bending + '+(C.N[at]>=0?'tension':(parts.cap.buck?'buckling':'compression'));
+    else if(parts.b<0.1*parts.ax) gov = Nat>=0?'Tension (pull)':(parts.cap.buck?'Buckling (push)':'Compression (push)');
+    else gov = 'Bending + '+(Nat>=0?'tension':(parts.cap.buck?'buckling':'compression'));
     C.maxU=mu; C.at=at; C.parts=parts; C.gov=gov; C.mN=mN; C.mV=mV; C.mM=mM; C.mMi=mMi; C.rel=rel;
     out.mem[me.id]=C;
     if(mu>out.maxU){ out.maxU=mu; out.maxWho=me.id; }
@@ -1079,6 +1105,7 @@ function renderSelRes(){
       ['Axial force',Math.abs(C.mN)<0.5?'—':`${fmtSmart(Math.abs(C.mN))} lb ${comp?'push':'pull'}`, comp?`push capacity ${fmtSmart(cap.C)} lb${cap.buck?' (buckling limit)':''}`:`pull capacity ${fmtSmart(cap.T)} lb`],
       [me.bs.length>1?'Bending stress (board 1)':'Bending stress',`${fmt(Math.abs(C.mM)*me.caps[0].sb/p.S)} psi`,`allowed ${fmt(p.Fb)} psi`],
       [C.pieces>1?'Worst sag between joints':'Sag between ends',`${fmt(C.rel,3)} in`, C.rel>1e-6?`L/${fmt(C.relL/C.rel)}${C.relL/C.rel<240?' — bouncy (> L/240)':''}`:''],
+      ['Buckling length',fmtFtIn(me.Lb/12),Math.abs(me.Lb-L*12)>0.5?'between brace points (joints where other members or supports connect)':'whole member — nothing braces it part-way'],
       ['Member weight',`${fmt(me.swq*12,1)} lb/ft`,me.bs.length>1?`${me.bs.length} boards`:`${esc(p.matName)}`]];
     el.innerHTML=`<div class="card"><h3>Results — ${memName(m)} (${esc(boardsLabel(m))})</h3>
       <div class="row" style="justify-content:space-between"><b style="font-size:22px">${fmt(u*100)}%</b><span class="pill ${cls}">${fail?'FAILS':u>0.85?'CLOSE TO LIMIT':'OK'}</span></div>
