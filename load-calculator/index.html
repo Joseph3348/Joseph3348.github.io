@@ -255,6 +255,7 @@ table.res small{color:var(--ink3);display:block}
     <li><b>Draw members</b> — pick <b>Member</b>, click a start point, click an end point. Keep clicking to chain members (great for rafters and trusses). Press <b>Esc</b> or right-click to stop. Points snap to the 1&nbsp;ft grid, to joints and onto other members.</li>
     <li><b>Add supports</b> — pick <b>Support</b> and click where the structure sits on a wall, post or foundation. <i>Pin</i> holds in place, <i>Roller</i> only holds up/down, <i>Fixed</i> also prevents rotation (like a post set in concrete).</li>
     <li><b>Add loads</b> — <b>Point load</b> for a concentrated weight at one spot; <b>Spread load</b> for weight along a member, in pounds per foot (e.g. roof snow + shingles, floor loads).</li>
+    <li><b>Reshape freely</b> — supports, point loads and members that end part-way along another member <i>ride</i> on it (shown as blue rings) instead of cutting it. Drag a member's end and they slide along with it; drag a ring to slide it along the member.</li>
     <li><b>Doubled / sistered boards</b> — draw a new member right on top of an existing one (or part of it), or select a member and tap <b>+ Sister another board</b>. The boards act together.</li>
     <li><b>Read the colors</b> — green is comfortable, yellow is getting there, red is at the limit, and dark red pulsing means it <b>fails</b>. Click any member for detailed numbers.</li>
     <li>Drag the <b>Load scale</b> slider or hit <b>Find breaking point</b> to see how much more load it takes before something gives.</li>
@@ -339,19 +340,34 @@ function newMember(a,b,base){
   if(base.section==='custom'){ m.cb=base.cb; m.cd=base.cd; m.cmat=base.cmat; }
   model.members.push(m); return m;
 }
-function splitMember(m,x,y){
-  const n=addNode(x,y); const b=nodeById(m.b);
-  const m2=newMember(n,b,m);
-  const r=m.release;
-  m.b=n.id;
-  if(r==='both'){ m.release='start'; m2.release='end'; } // new joint stays continuous; pins remain at the original ends
-  else if(r==='start'){ m.release='start'; m2.release='none'; }
-  else if(r==='end'){ m.release='none'; m2.release='end'; }
+// End releases for piece k of a member cut into pieces: pins stay only at the member's original two ends.
+function relFor(r,first,last){ return r==='both'?(first&&last?'both':first?'start':last?'end':'none') : r==='start'?(first?'start':'none') : r==='end'?(last?'end':'none') : 'none'; }
+const hostedOn = mid => model.nodes.filter(n=>n.host&&n.host.m===mid);
+/* A "riding" joint (node.host = {m, t}) sits at fraction t along member m without cutting it.
+   Supports, point loads and members that end part-way along another member use riding joints, so the
+   host stays one piece and the joint slides along with it when the host is moved, stretched or rotated.
+   The calculation cuts members at their riding joints behind the scenes (see expandModel). */
+function syncHosted(){
+  for(let pass=0;pass<6;pass++){ let moved=false;
+    for(const n of model.nodes){ if(!n.host) continue; const m=memberById(n.host.m);
+      if(!m||m.a===n.id||m.b===n.id){ delete n.host; continue; }
+      const a=nodeById(m.a), b=nodeById(m.b), x=a.x+n.host.t*(b.x-a.x), y=a.y+n.host.t*(b.y-a.y);
+      if(Math.abs(x-n.x)>1e-9||Math.abs(y-n.y)>1e-9){ n.x=x; n.y=y; moved=true; } }
+    if(!moved) break; }
+}
+// Really cut member m at node n (used by "Split in half" and for partially sistered boards)
+function realSplit(m,n){
+  const a=nodeById(m.a), b=nodeById(m.b), ts=(n.host&&n.host.m===m.id)? n.host.t : projT(n,a,b);
+  delete n.host;
+  const m2=newMember(n,b,m), r=m.release; m.b=n.id; m.release=relFor(r,true,false); m2.release=relFor(r,false,true);
+  for(const h of hostedOn(m.id)){ if(h.host.t>ts) h.host={m:m2.id,t:(h.host.t-ts)/(1-ts)}; else h.host.t=h.host.t/ts; }
   return n;
 }
+function splitMember(m,x,y){ return realSplit(m,addNode(x,y)); }
 function getOrCreateNode(p){
   const n = nodeAt(p.x,p.y); if(n) return n;
-  const m = memberThrough(p.x,p.y); if(m) return splitMember(m,p.x,p.y);
+  const m = memberThrough(p.x,p.y);
+  if(m){ const a=nodeById(m.a), b=nodeById(m.b), nn=addNode(p.x,p.y); nn.host={m:m.id, t:projT(nn,a,b)}; return nn; }
   return addNode(p.x,p.y);
 }
 function findMember(a,b){ return model.members.find(m=>(m.a===a.id&&m.b===b.id)||(m.a===b.id&&m.b===a.id)); }
@@ -364,16 +380,23 @@ function addMemberSplit(na,nb,base){
   for(let i=0;i<nseg;i++){
     const first=i===0, lst=i===nseg-1;
     // pins only at the two ends you drew; joints it passes through stay continuous (one board)
-    const rel = r==='both'?(first&&lst?'both':first?'start':lst?'end':'none') : r==='start'?(first?'start':'none') : r==='end'?(lst?'end':'none') : 'none';
-    const ex=findMember(chain[i],chain[i+1]);
+    const rel = relFor(r,first,lst), u=chain[i], v=chain[i+1];
+    // drawing along part of an existing member: cut it there (for real) so that part can be doubled up
+    for(let it=0; it<4 && !findMember(u,v); it++){ const h=overlapHost(u,v); if(!h) break; const rn=[u,v].find(n=>n.host&&n.host.m===h.id); if(!rn) break; realSplit(h,rn); }
+    const ex=findMember(u,v);
     if(ex){ ex.sisters=ex.sisters||[]; ex.sisters.push(SECTIONS[base.section]?base.section:(SECTIONS[ex.section]?ex.section:DEFAULT_SECTION)); sistered.push(ex); last=ex; }
     else last=newMember(chain[i],chain[i+1],{...base,release:rel});
   }
   return {last,sistered};
 }
+function overlapHost(u,v){ return model.members.find(h=>{ if((h.a===u.id&&h.b===v.id)||(h.a===v.id&&h.b===u.id)) return false;
+  const on=n=> n.id===h.a||n.id===h.b||(n.host&&n.host.m===h.id); return on(u)&&on(v); }); }
 function boards(m){ return [props(m), ...(m.sisters||[]).map(id=>props({section:id}))]; }
 function boardsLabel(m){ const ls=boards(m).map(p=>p.label); return ls.length>1&&ls.every(l=>l===ls[0]) ? `${ls.length}× ${ls[0]}` : ls.join(' + '); }
-function removeOrphans(){ const used=new Set(); model.members.forEach(m=>{used.add(m.a);used.add(m.b);}); model.nodes=model.nodes.filter(n=>used.has(n.id)); }
+function removeOrphans(){
+  for(const n of model.nodes) if(n.host&&!memberById(n.host.m)) delete n.host;
+  const used=new Set(); model.members.forEach(m=>{used.add(m.a);used.add(m.b);}); model.nodes.forEach(n=>{ if(n.host) used.add(n.id); });
+  model.nodes=model.nodes.filter(n=>used.has(n.id)); }
 function deleteMember(id){ model.members=model.members.filter(m=>m.id!==id); removeOrphans(); }
 function deleteNode(id){ model.members=model.members.filter(m=>m.a!==id&&m.b!==id); model.nodes=model.nodes.filter(n=>n.id!==id); removeOrphans(); }
 function mergeNodes(fromId,toId){
@@ -400,6 +423,36 @@ function udlGlobal(m,c,s){ // lb/in, global (qx, qy) with y up
     case 'horizontal': return [w,0];
     default: return [0,-w];
   }
+}
+function expandModel(mdl){
+  const members=[], parentOf={};
+  for(const m of mdl.members){
+    const hosted=mdl.nodes.filter(n=>n.host&&n.host.m===m.id).sort((p,q)=>p.host.t-q.host.t);
+    const chain=[{id:m.a,t:0},...hosted.map(n=>({id:n.id,t:n.host.t})),{id:m.b,t:1}], ns=chain.length-1;
+    for(let k=0;k<ns;k++){ const id=m.id+':'+k; members.push({...m,id,a:chain[k].id,b:chain[k+1].id,release:relFor(m.release||'none',k===0,k===ns-1)}); parentOf[id]={m:m.id,k,t0:chain[k].t,t1:chain[k+1].t}; }
+  }
+  return {mdl:{...mdl,members}, parentOf};
+}
+function analyzeModel(){
+  syncHosted(); const ex=expandModel(model), r=analyze(ex.mdl); r.parentOf=ex.parentOf;
+  if(r.lambda&&r.lambda.who!=null&&ex.parentOf[r.lambda.who]) r.lambda.who=ex.parentOf[r.lambda.who].m;
+  return r;
+}
+// combine() works on the hidden pieces; this joins the pieces back into one result per drawn member
+function combineP(res,lam){
+  const c=combine(res,lam), out={mem:{}, maxU:0, maxWho:null, fails:0, maxDisp:c.maxDisp, R:c.R, D:c.D, lam}, groups={};
+  for(const me of res.ME){ const po=res.parentOf[me.id]; (groups[po.m]=groups[po.m]||[]).push({me,po}); }
+  const keys=['N','V','M','gx','gy','u','vl'];
+  for(const pid in groups){ const g=groups[pid].sort((x,y)=>x.po.k-y.po.k), P={t:[]}; keys.forEach(k=>P[k]=[]);
+    let best=null, mN=0, mV=0, mM=0, mMi=0, rel=0, relL=0, worst=Infinity;
+    for(const {me,po} of g){ const C=c.mem[me.id], off=P.t.length;
+      for(let i=0;i<=NS;i++){ P.t.push(po.t0+(po.t1-po.t0)*i/NS); for(const k of keys) P[k].push(C[k][i]); }
+      if(!best||C.maxU>best.C.maxU) best={C,me,off};
+      if(Math.abs(C.mN)>Math.abs(mN)) mN=C.mN; if(Math.abs(C.mV)>Math.abs(mV)) mV=C.mV; if(Math.abs(C.mM)>Math.abs(mM)){ mM=C.mM; mMi=off+C.mMi; }
+      if(C.rel>1e-9&&me.L/C.rel<worst){ worst=me.L/C.rel; rel=C.rel; relL=me.L; } }
+    Object.assign(P,{maxU:best.C.maxU, at:best.off+best.C.at, parts:best.C.parts, gov:best.C.gov, mN,mV,mM,mMi, rel, relL, me:best.me, pieces:g.length});
+    out.mem[pid]=P; if(P.maxU>out.maxU){ out.maxU=P.maxU; out.maxWho=+pid; } if(P.maxU>1+1e-9) out.fails++; }
+  return out;
 }
 function analyze(mdl){
   const nodes=mdl.nodes, mems=mdl.members;
@@ -581,14 +634,14 @@ function afterLoad(){ stopAnim(); if(state.sel && !(state.sel.type==='node'?node
 let saveTimer=null;
 function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ try{ localStorage.setItem('loadcalc.v1', JSON.stringify({model, opts:state.opts, show:state.show})); }catch(e){} },300); }
 function update(){
-  state.res=analyze(model); state.comboKey=null;
+  state.res=analyzeModel(); state.comboKey=null;
   const sl=document.getElementById('mult'); const lam=state.res.lambda?state.res.lambda.lam:Infinity;
   const mx=Math.max(3, isFinite(lam)?Math.min(50,Math.ceil(lam*1.3)):3);
   if(+sl.max!==mx) sl.max=mx;
   renderStatus(); renderSelRes(); schedule(); save();
 }
 function changed(){ update(); renderSel(); renderOpts(); }
-function getCombo(){ const r=state.res; if(!r||r.status!=='ok') return null; const key=state.mult; if(state.comboKey!==key){ state.combo=combine(r,state.mult); state.comboKey=key; } return state.combo; }
+function getCombo(){ const r=state.res; if(!r||r.status!=='ok') return null; const key=state.mult; if(state.comboKey!==key){ state.combo=combineP(r,state.mult); state.comboKey=key; } return state.combo; }
 
 /* =====================================================================
    VIEW TRANSFORMS & HIT TESTS
@@ -639,8 +692,8 @@ function render(){
   drawGrid(o,W,H);
   const res=state.res, combo=getCombo(), sh=state.show;
   const defF = combo&&sh.deformed ? (state.defMode==='auto'?res.autoDef:+state.defMode) : 0;
-  const memPts = m=>{ const a=nodeById(m.a), b=nodeById(m.b), C=combo&&combo.mem[m.id]; const pts=[];
-    for(let i=0;i<=NS;i++){ const t=i/NS; let x=a.x+t*(b.x-a.x), y=a.y+t*(b.y-a.y); if(C&&defF){ x+=C.gx[i]*defF/12; y+=C.gy[i]*defF/12; } pts.push(w2s(x,y)); } return pts; };
+  const memPts = m=>{ const a=nodeById(m.a), b=nodeById(m.b), C=combo&&combo.mem[m.id], ts=C?C.t:Array.from({length:NS+1},(_,i)=>i/NS);
+    return ts.map((t,i)=>{ let x=a.x+t*(b.x-a.x), y=a.y+t*(b.y-a.y); if(C&&defF){ x+=C.gx[i]*defF/12; y+=C.gy[i]*defF/12; } return w2s(x,y); }); };
   // --- members
   const labels=[];
   for(const m of model.members){
@@ -656,11 +709,11 @@ function render(){
       const poly=pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
       if(C.maxU>1+1e-9) o.push(`<polyline points="${poly}" fill="none" stroke="#ef4444" stroke-width="${18+xw}" stroke-linecap="round" stroke-linejoin="round" class="pulse"/>`);
       if(state.flash===m.id) o.push(`<polyline points="${poly}" fill="none" stroke="#f59e0b" stroke-width="22" stroke-linecap="round" class="flash" opacity=".7"/>`);
-      if(sh.stress){ for(let i=0;i<NS;i++) o.push(`<line x1="${pts[i][0].toFixed(1)}" y1="${pts[i][1].toFixed(1)}" x2="${pts[i+1][0].toFixed(1)}" y2="${pts[i+1][1].toFixed(1)}" stroke="${utilColor(Math.max(C.u[i],C.u[i+1]))}" stroke-width="${7+xw}" stroke-linecap="round"/>`); }
+      if(sh.stress){ for(let i=0;i<pts.length-1;i++) o.push(`<line x1="${pts[i][0].toFixed(1)}" y1="${pts[i][1].toFixed(1)}" x2="${pts[i+1][0].toFixed(1)}" y2="${pts[i+1][1].toFixed(1)}" stroke="${utilColor(Math.max(C.u[i],C.u[i+1]))}" stroke-width="${7+xw}" stroke-linecap="round"/>`); }
       else o.push(`<polyline points="${poly}" fill="none" stroke="${COL.mem}" stroke-width="${6+xw}" stroke-linecap="round" stroke-linejoin="round"/>`);
       if(nb>1) o.push(`<polyline points="${poly}" fill="none" stroke="#fff" stroke-width="1.3" opacity=".85"/>`);
       if(C.maxU>1+1e-9){ const p=pts[C.at]; o.push(`<g transform="translate(${p[0]},${p[1]})"><circle r="9" fill="#fff" stroke="#b91c1c" stroke-width="2.5"/><path d="M-4 -4 L4 4 M4 -4 L-4 4" stroke="#b91c1c" stroke-width="2.6" stroke-linecap="round"/></g>`); }
-      if(sh.values){ const mid=pts[NS/2]; labels.push({x:mid[0],y:mid[1],dx:bx-ax,dy:by-ay,u:C.maxU,id:m.id,nb}); }
+      if(sh.values){ let mi=0; C.t.forEach((t,i)=>{ if(Math.abs(t-0.5)<Math.abs(C.t[mi]-0.5)) mi=i; }); const mid=pts[mi]; labels.push({x:mid[0],y:mid[1],dx:bx-ax,dy:by-ay,u:C.maxU,id:m.id,nb}); }
     } else {
       o.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${COL.mem}" stroke-width="${6+xw}" stroke-linecap="round"/>`);
       if(nb>1) o.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#fff" stroke-width="1.3" opacity=".85"/>`);
@@ -681,7 +734,8 @@ function render(){
   for(const n of model.nodes){ const [x,y]=w2s(n.x,n.y);
     const selected=state.sel&&state.sel.type==='node'&&state.sel.id===n.id, hov=state.hover&&state.hover.type==='node'&&state.hover.id===n.id;
     if(selected||hov) o.push(`<circle cx="${x}" cy="${y}" r="11" fill="${selected?'#60a5fa':'#93c5fd'}" opacity=".5"/>`);
-    o.push(`<circle cx="${x}" cy="${y}" r="5" fill="${selected?COL.sel:'#fff'}" stroke="${COL.node}" stroke-width="2"/>`); }
+    if(n.host) o.push(`<circle cx="${x}" cy="${y}" r="6" fill="${selected?COL.sel:'#fff'}" stroke="${COL.sel}" stroke-width="2.4"/><circle cx="${x}" cy="${y}" r="2" fill="${selected?'#fff':COL.sel}"/>`);
+    else o.push(`<circle cx="${x}" cy="${y}" r="5" fill="${selected?COL.sel:'#fff'}" stroke="${COL.node}" stroke-width="2"/>`); }
   // --- unstable highlight
   if(res&&res.status==='unstable'&&res.nodeId!=null){ const n=nodeById(res.nodeId); if(n){ const [x,y]=w2s(n.x,n.y); o.push(`<circle cx="${x}" cy="${y}" r="18" fill="none" stroke="#f59e0b" stroke-width="4" class="pulse" style="opacity:.8"/><text x="${x+22}" y="${y-14}" font-size="12" font-weight="700" fill="#b45309">loose: moves ${res.dir}</text>`);} }
   // --- labels
@@ -710,18 +764,18 @@ function drawGrid(o,W,H){
   o.push(lbl.join(''));
 }
 function drawDiagram(o,combo,key,color){
-  let mx=0; for(const id in combo.mem){ const a=combo.mem[id][key]; for(let i=0;i<=NS;i++) mx=Math.max(mx,Math.abs(a[i])); }
+  let mx=0; for(const id in combo.mem){ for(const v of combo.mem[id][key]) mx=Math.max(mx,Math.abs(v)); }
   if(mx<1e-6) return; const k=48/mx;
   for(const m of model.members){ const C=combo.mem[m.id]; if(!C) continue; const a=nodeById(m.a), b=nodeById(m.b);
     const [ax,ay]=w2s(a.x,a.y), [bx,by]=w2s(b.x,b.y), L=Math.hypot(bx-ax,by-ay)||1;
     // screen unit vector of local +y
     const nx=(ay-by)/L, ny=-(bx-ax)/L; const sgn = key==='M'?-1:1;
     const arr=C[key]; const base=[], top=[];
-    for(let i=0;i<=NS;i++){ const t=i/NS, x=ax+t*(bx-ax), y=ay+t*(by-ay), v=arr[i]*k*sgn; base.push([x,y]); top.push([x+nx*v, y+ny*v]); }
+    for(let i=0;i<arr.length;i++){ const t=C.t[i], x=ax+t*(bx-ax), y=ay+t*(by-ay), v=arr[i]*k*sgn; base.push([x,y]); top.push([x+nx*v, y+ny*v]); }
     let col=color; if(key==='N'){ const avg=arr.reduce((s,v)=>s+v,0)/arr.length; col=avg>=0?'#ea580c':'#2563eb'; }
-    const d='M'+base[0].join(',')+top.map(p=>' L'+p[0].toFixed(1)+','+p[1].toFixed(1)).join('')+' L'+base[NS].join(',')+' Z';
+    const d='M'+base[0].join(',')+top.map(p=>' L'+p[0].toFixed(1)+','+p[1].toFixed(1)).join('')+' L'+base[base.length-1].join(',')+' Z';
     o.push(`<path d="${d}" fill="${col}" fill-opacity=".18" stroke="${col}" stroke-width="1.6"/>`);
-    let mi=0; for(let i=0;i<=NS;i++) if(Math.abs(arr[i])>Math.abs(arr[mi])) mi=i;
+    let mi=0; for(let i=0;i<arr.length;i++) if(Math.abs(arr[i])>Math.abs(arr[mi])) mi=i;
     if(Math.abs(arr[mi])>0.06*mx && state.show.values){ const p=top[mi], v=arr[mi];
       const txt = key==='M'? fmtSmart(v/12)+' lb·ft' : key==='V'? fmtSmart(Math.abs(v))+' lb' : fmtSmart(Math.abs(v))+' lb '+(v>=0?'pull':'push');
       const ox=(p[0]-base[mi][0]), oy=(p[1]-base[mi][1]), ol=Math.hypot(ox,oy)||1;
@@ -754,12 +808,13 @@ function drawSupport(o,n){
   else if(t==='fixed'){ o.push(`<rect x="${x-20}" y="${y+4}" width="40" height="11" fill="url(#hatch)"/><path d="M${x-20} ${y+4}H${x+20}" stroke="#334155" stroke-width="3.5"/><path d="M${x} ${y}V${y+4}" stroke="#334155" stroke-width="5"/>`); }
 }
 function drawReactions(o,combo){
+  let rmax=0; combo.R.forEach((v,d)=>{ if(d%3!==2) rmax=Math.max(rmax,Math.abs(v)); }); const tiny=Math.max(0.5,0.03*rmax);
   for(const n of model.nodes){ if(!n.support||n.support==='none') continue; const i=state.res.idx.get(n.id); if(i==null) continue;
     const [x,y]=w2s(n.x,n.y), Rx=combo.R[3*i], Ry=combo.R[3*i+1], Mz=combo.R[3*i+2];
     const yb = n.support==='fixed'?y+18:n.support==='rollerY'?y+34:y+29;
-    if(Math.abs(Ry)>0.5){ const up=Ry>0, y1=up?yb+40:yb+4, y2=up?yb+4:yb+40; arrow(o,x,y1,x,y2,'ah-react',COL.react,3);
+    if(Math.abs(Ry)>tiny){ const up=Ry>0, y1=up?yb+40:yb+4, y2=up?yb+4:yb+40; arrow(o,x,y1,x,y2,'ah-react',COL.react,3);
       o.push(`<text x="${x}" y="${yb+56}" text-anchor="middle" font-size="12" font-weight="800" fill="${COL.react}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtSmart(Math.abs(Ry))} lb ${up?'↑':'↓'}</text>`); }
-    if(Math.abs(Rx)>0.5){ const xb=n.support==='rollerX'?x-34:x-22, right=Rx>0, x1=right?xb-42:xb-4, x2=right?xb-4:xb-42, yy=n.support==='rollerX'?y:y+12;
+    if(Math.abs(Rx)>tiny){ const xb=n.support==='rollerX'?x-34:x-22, right=Rx>0, x1=right?xb-42:xb-4, x2=right?xb-4:xb-42, yy=n.support==='rollerX'?y:y+12;
       arrow(o,x1,yy,x2,yy,'ah-react',COL.react,3);
       o.push(`<text x="${xb-48}" y="${yy+4}" text-anchor="end" font-size="12" font-weight="800" fill="${COL.react}" stroke="#fff" stroke-width="3" paint-order="stroke">${fmtSmart(Math.abs(Rx))} lb ${right?'→':'←'}</text>`); }
     if(n.support==='fixed'&&Math.abs(Mz)>6){ const ccw=Mz>0, r=24;
@@ -882,7 +937,10 @@ function renderSel(){
       <div class="row" style="margin-top:10px"><button class="btn sm" data-act="allsize">Use these boards on all members</button><button class="btn sm" data-act="split">Split in half</button></div></div>`;
   } else { const n=nodeById(s.id); if(!n){state.sel=null;return renderSel();}
     el.innerHTML=`<div class="card"><div class="selh"><span class="name">Joint ${nodeName(n)}</span><button class="btn sm danger" data-act="del">Delete</button></div>
-      <div class="grid2"><label class="field">X (ft)<input type="number" step="0.5" data-k="x" value="${n.x}"></label><label class="field">Y (ft)<input type="number" step="0.5" data-k="y" value="${n.y}"></label></div>
+      ${n.host&&memberById(n.host.m)?(()=>{ const h=memberById(n.host.m), a=nodeById(h.a), b=nodeById(h.b), L=Math.hypot(b.x-a.x,b.y-a.y);
+        return `<div class="muted" style="margin-top:4px">Rides on member <b>${memName(h)}</b> without cutting it — slides along when you reshape. Drag it to slide.</div>
+        <label class="field">Distance from ${nodeName(a)} (ft) — member is ${fmt(L,2)} ft<input type="number" step="0.25" min="0" data-k="along" value="${+(n.host.t*L).toFixed(3)}"></label>`; })()
+      : `<div class="grid2"><label class="field">X (ft)<input type="number" step="0.5" data-k="x" value="${+n.x.toFixed(4)}"></label><label class="field">Y (ft)<input type="number" step="0.5" data-k="y" value="${+n.y.toFixed(4)}"></label></div>`}
       <label class="field">Support<select data-k="support">${[['none','None (free joint)'],...SUPPORTS.map(s=>[s[0],supportName(s[0])])].map(([v,l])=>`<option value="${v}"${n.support===v?' selected':''}>${l}</option>`).join('')}</select></label>
       <div class="grid2"><label class="field">Point load down (lb)<input type="number" step="100" data-k="fy" value="${+n.fy||0}"></label><label class="field">Sideways → (lb)<input type="number" step="100" data-k="fx" value="${+n.fx||0}"></label></div></div>`;
   }
@@ -902,7 +960,9 @@ function applyField(t){
     if(k==='len'){ if(val<=0.01) return; const a=nodeById(m.a), b=nodeById(m.b), L=Math.hypot(b.x-a.x,b.y-a.y)||1; b.x=r6(a.x+(b.x-a.x)/L*val); b.y=r6(a.y+(b.y-a.y)/L*val); }
     else if(k==='section'){ m.section=val; if(val==='custom'){ const p=props({section:DEFAULT_SECTION}); m.cb=m.cb||1.5; m.cd=m.cd||5.5; m.cmat=m.cmat||'dfl'; } rebuild=true; }
     else m[k]=val;
-  } else { const n=nodeById(state.sel.id); n[k]= (k==='x'||k==='y')? r6(val) : val; }
+  } else { const n=nodeById(state.sel.id);
+    if(k==='along'){ if(!n.host) return; const h=memberById(n.host.m), a=nodeById(h.a), b=nodeById(h.b), L=Math.hypot(b.x-a.x,b.y-a.y)||1; n.host.t=Math.max(0.001,Math.min(0.999,val/L)); }
+    else n[k]= (k==='x'||k==='y')? r6(val) : val; }
   update(); if(rebuild) renderSel(); else renderPeek();
 }
 el.addEventListener('input',e=>{ if(e.target.type==='number') applyField(e.target); });
@@ -915,12 +975,12 @@ el.addEventListener('click',e=>{ const b=e.target.closest('[data-act]'); if(!b||
   else if(act==='split'){ const m=memberById(state.sel.id), a=nodeById(m.a), b=nodeById(m.b); checkpoint(); const n=splitMember(m,(a.x+b.x)/2,(a.y+b.y)/2); state.sel={type:'node',id:n.id}; changed(); }
 });
 }
-function miniChart(arr,L,color,title,conv,unit){
+function miniChart(arr,ts,L,color,title,conv,unit){
   const W=300,H=74,pad=4; let mx=0; for(const v of arr) mx=Math.max(mx,Math.abs(v)); const k=mx>0?(H/2-10)/mx:0;
-  const pts=[...arr].map((v,i)=>[pad+i/NS*(W-2*pad), H/2-v*k]);
+  const pts=[...arr].map((v,i)=>[pad+ts[i]*(W-2*pad), H/2-v*k]);
   let mi=0; arr.forEach((v,i)=>{ if(Math.abs(v)>Math.abs(arr[mi])) mi=i; });
   const d=`M${pad},${H/2} `+pts.map(p=>`L${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')+` L${W-pad},${H/2} Z`;
-  return `<div class="chart"><div class="lbl"><span>${title}</span><span style="color:${color}">max ${fmtSmart(conv(arr[mi]))} ${unit} @ ${fmt(mi/NS*L,1)} ft</span></div>
+  return `<div class="chart"><div class="lbl"><span>${title}</span><span style="color:${color}">max ${fmtSmart(conv(arr[mi]))} ${unit} @ ${fmt(ts[mi]*L,1)} ft</span></div>
   <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="background:#f8fafc;border-radius:8px"><path d="M0 ${H/2}H${W}" stroke="#cbd5e1"/><path d="${d}" fill="${color}" fill-opacity=".18" stroke="${color}" stroke-width="1.8"/><circle cx="${pts[mi][0]}" cy="${pts[mi][1]}" r="3" fill="${color}"/></svg></div>`;
 }
 function renderSelRes(){
@@ -929,23 +989,23 @@ function renderSelRes(){
   const sp=document.getElementById('selPill'); if(sp) sp.innerHTML = (s&&s.type==='member'&&c&&c.mem[s.id])? utilPill(c.mem[s.id].maxU) : '';
   if(!s||!c){ el.innerHTML=''; return; }
   if(s.type==='member'){ const m=memberById(s.id), C=m&&c.mem[m.id]; if(!C){el.innerHTML='';return;}
-    const me=state.res.ME.find(x=>x.id===m.id), p=me.p, cap=me.cap, L=me.L/12, u=C.maxU, fail=u>1+1e-9, cls=fail?'bad':u>0.85?'warn':'ok';
+    const me=C.me, p=me.p, cap=me.cap, L=Math.hypot(nodeById(m.b).x-nodeById(m.a).x,nodeById(m.b).y-nodeById(m.a).y), u=C.maxU, fail=u>1+1e-9, cls=fail?'bad':u>0.85?'warn':'ok';
     const N=C.N[C.at], comp=C.mN<0;
     const rows=[
       ['Bending moment',`${fmtSmart(Math.abs(C.mM)/12)} lb·ft`,`capacity ${fmtSmart(cap.M/12)} lb·ft`],
       ['Shear force',`${fmtSmart(Math.abs(C.mV))} lb`,`capacity ${fmtSmart(cap.V)} lb`],
       ['Axial force',Math.abs(C.mN)<0.5?'—':`${fmtSmart(Math.abs(C.mN))} lb ${comp?'push':'pull'}`, comp?`push capacity ${fmtSmart(cap.C)} lb${cap.buck?' (buckling limit)':''}`:`pull capacity ${fmtSmart(cap.T)} lb`],
       [me.bs.length>1?'Bending stress (board 1)':'Bending stress',`${fmt(Math.abs(C.mM)*me.caps[0].sb/p.S)} psi`,`allowed ${fmt(p.Fb)} psi`],
-      ['Sag between ends',`${fmt(C.rel,3)} in`, C.rel>1e-6?`L/${fmt(me.L/C.rel)}${me.L/C.rel<240?' — bouncy (> L/240)':''}`:''],
+      [C.pieces>1?'Worst sag between joints':'Sag between ends',`${fmt(C.rel,3)} in`, C.rel>1e-6?`L/${fmt(C.relL/C.rel)}${C.relL/C.rel<240?' — bouncy (> L/240)':''}`:''],
       ['Member weight',`${fmt(me.swq*12,1)} lb/ft`,me.bs.length>1?`${me.bs.length} boards`:`${esc(p.matName)}`]];
     el.innerHTML=`<div class="card"><h3>Results — ${memName(m)} (${esc(boardsLabel(m))})</h3>
       <div class="row" style="justify-content:space-between"><b style="font-size:22px">${fmt(u*100)}%</b><span class="pill ${cls}">${fail?'FAILS':u>0.85?'CLOSE TO LIMIT':'OK'}</span></div>
       <div class="ubar"><i style="width:${Math.min(100,u/1.5*100)}%;background:${utilColor(u)}"></i><span class="lim" style="left:${100/1.5}%"></span></div>
-      <div class="muted">Governed by <b>${C.gov.toLowerCase()}</b> at ${fmt(C.at/NS*L,1)} ft from ${nodeName(nodeById(m.a))}.</div>
+      <div class="muted">Governed by <b>${C.gov.toLowerCase()}</b> at ${fmt(C.t[C.at]*L,1)} ft from ${nodeName(nodeById(m.a))}.</div>
       <table class="res">${rows.map(r=>`<tr><td>${r[0]}${r[2]?`<small>${r[2]}</small>`:''}</td><td><b>${r[1]}</b></td></tr>`).join('')}</table>
-      ${miniChart(C.M,L,'#8b5cf6','Bending moment',v=>v/12,'lb·ft')}
-      ${miniChart(C.V,L,'#0284c7','Shear',v=>v,'lb')}
-      ${Math.abs(C.mN)>0.5?miniChart(C.N,L,comp?'#2563eb':'#ea580c','Axial (+pull / −push)',v=>v,'lb'):''}</div>`;
+      ${miniChart(C.M,C.t,L,'#8b5cf6','Bending moment',v=>v/12,'lb·ft')}
+      ${miniChart(C.V,C.t,L,'#0284c7','Shear',v=>v,'lb')}
+      ${Math.abs(C.mN)>0.5?miniChart(C.N,C.t,L,comp?'#2563eb':'#ea580c','Axial (+pull / −push)',v=>v,'lb'):''}</div>`;
   } else { const n=nodeById(s.id); const i=state.res.idx.get(n?n.id:-1); if(i==null){el.innerHTML='';return;}
     const dx=c.D[3*i], dy=c.D[3*i+1]; const r=state.res.restr; let rr='';
     if(r[3*i]) rr+=`<tr><td>Sideways reaction</td><td><b>${fmtSmart(Math.abs(c.R[3*i]))} lb ${c.R[3*i]>=0?'→':'←'}</b></td></tr>`;
@@ -990,7 +1050,7 @@ function toolClick(sx,sy){
 svg.addEventListener('contextmenu',e=>e.preventDefault());
 svg.addEventListener('pointerdown',e=>{
   stopAnim();
-  state.coarse=e.pointerType!=='mouse'; const p=spos(e); svg.setPointerCapture(e.pointerId); pointers.set(e.pointerId,p); state.cursor=p;
+  state.coarse=e.pointerType!=='mouse'; if(e.isPrimary){ pointers.clear(); if(state.drag&&state.drag.type==='pinch') state.drag=null; } const p=spos(e); svg.setPointerCapture(e.pointerId); pointers.set(e.pointerId,p); state.cursor=p;
   if(pointers.size===2){ const [a,b]=[...pointers.values()]; state.drag={type:'pinch', d0:Math.hypot(a.x-b.x,a.y-b.y), c0:{x:(a.x+b.x)/2,y:(a.y+b.y)/2}, v0:{...state.view}}; if(state.tool==='member'&&state.pending&&state.pendingFresh) state.pending=null; return; }
   if(pointers.size>2) return;
   const base={sx:p.x, sy:p.y, ox:state.view.ox, oy:state.view.oy, moved:false};
@@ -1020,7 +1080,13 @@ svg.addEventListener('pointermove',e=>{
     schedule(); return; }
   const mv=Math.hypot(p.x-d.sx,p.y-d.sy)>(state.coarse?14:5);
   if(d.type==='pan'||d.type==='click'){ if(mv||d.moved){ d.moved=true; state.view.ox=d.ox+(p.x-d.sx); state.view.oy=d.oy+(p.y-d.sy); svg.style.cursor='grabbing'; schedule(); } }
-  else if(d.type==='node'){ if(mv||d.moved){ if(!d.moved){checkpoint(); d.moved=true;} const n=nodeById(d.id), q=snapAt(p.x,p.y,{exclude:d.id,members:false,free:e.shiftKey}); n.x=q.x; n.y=q.y; d.target=q.kind==='node'?q.nodeId:null; state.hover=null; update(); } }
+  else if(d.type==='node'){ if(mv||d.moved){ if(!d.moved){checkpoint(); d.moved=true;} const n=nodeById(d.id);
+    if(n.host){ const h=memberById(n.host.m), a=nodeById(h.a), b=nodeById(h.b), L=Math.hypot(b.x-a.x,b.y-a.y)||1; let t=projT(w,a,b);
+      if(!e.shiftKey){ if(Math.abs(t-0.5)*L*state.view.sc<12) t=0.5; else { const g=state.grid/2; t=Math.round(t*L/g)*g/L; } }
+      const tmin=Math.min(0.25,(state.grid/4)/L); n.host.t=Math.max(tmin,Math.min(1-tmin,t));
+      const twin=hostedOn(h.id).find(o=>o!==n&&Math.abs(o.host.t-n.host.t)<1e-6); d.target=twin?twin.id:null; }
+    else { const q=snapAt(p.x,p.y,{exclude:d.id,members:false,free:e.shiftKey}); n.x=q.x; n.y=q.y; d.target=q.kind==='node'?q.nodeId:null; }
+    state.hover=null; update(); } }
   else if(d.type==='mem'){ if(mv||d.moved){ if(!d.moved){checkpoint(); d.moved=true;} const m=memberById(d.id), a=nodeById(m.a), b=nodeById(m.b), w0=s2w(d.sx,d.sy), g=e.shiftKey?1e-6:state.grid;
       const dx=Math.round((w.x-w0.x)/g)*g, dy=Math.round((w.y-w0.y)/g)*g; a.x=r6(d.a0.x+dx); a.y=r6(d.a0.y+dy); b.x=r6(d.b0.x+dx); b.y=r6(d.b0.y+dy); state.hover=null; update(); } }
   else if(d.type==='member'){ state.snap=snapAt(p.x,p.y,{free:e.shiftKey}); schedule(); }
